@@ -1,0 +1,40 @@
+# Reference / third-party source kept locally for study — never committed.
+/Reference/
+
+# Build output
+/build/
+/build-*/
+/out/
+/cmake-build-*/
+*.o
+*.a
+*.so
+*.dylib
+
+# Local, uncommitted working notes and lists
+/.claude/local/
+
+# Local databases and saved games
+*.db
+*.db-wal
+*.db-shm
+/saves/
+
+# Secrets and local environment
+.env
+.env.*
+*.key
+*.pem
+
+# Generated tooling artifacts
+/compile_commands.json
+
+# Dear ImGui runtime layout file
+imgui.ini
+
+# Editor / OS
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store
