@@ -97,6 +97,26 @@ int main(void) {
         CHECK(s.story.size() == 2u);
     }
 
+    // new_game creates a character with a starting kit and resets state.
+    {
+        oce::EngineConfig cfg;
+        cfg.store_backend = OCE_STORE_MEMORY;
+        oce::Engine engine(cfg);
+        oce::NewGameParams p;
+        p.name = "Lyra";
+        p.cls = oce::CharacterClass::Mage;
+        p.background = "a wandering scholar";
+        p.world_prompt = "a rain-soaked port city";
+        engine.new_game(p);
+        oce::GameState gs = engine.state_copy();
+        CHECK(gs.player.name == "Lyra");
+        CHECK(gs.player.cls == oce::CharacterClass::Mage);
+        CHECK(gs.player.attributes.intelligence == 8); // the mage starting spread
+        CHECK(gs.inventory.size() == 5u);              // starting kit
+        CHECK(gs.world_description == "a rain-soaked port city");
+        CHECK(!gs.story.empty());
+    }
+
     cleanup(db);
 
     if (failures == 0) {

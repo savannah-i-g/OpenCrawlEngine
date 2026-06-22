@@ -156,6 +156,9 @@ std::string compact_state(const GameState& s) {
     oce_json_obj_set(root, "player", p);
 
     oce_json_obj_set_str(root, "location", s.world_state.current_location.c_str());
+    if (!s.world_description.empty()) {
+        oce_json_obj_set_str(root, "setting", s.world_description.c_str());
+    }
     oce_json_obj_set_bool(root, "in_combat", s.combat.active);
     if (s.combat.active) {
         oce_json* enemies = oce_json_new_array();
@@ -245,6 +248,31 @@ bool Engine::set_api_key(const std::string& key) {
     bool ok = oce_secrets_set(secrets_, "openrouter", key.c_str()) == OCE_SECRETS_OK;
     reload_agent_ = true; // rebuild the agent with the new key on the next turn
     return ok;
+}
+
+void Engine::new_game(const NewGameParams& params) {
+    {
+        std::lock_guard<std::mutex> sl(state_mutex_);
+        if (turn_in_progress_) {
+            return; // do not reset state mid-turn
+        }
+        state_ = GameState{};
+        state_.player = make_character(params.name, params.cls, params.background);
+        state_.inventory = starting_kit();
+        state_.world_description = params.world_prompt;
+        state_.world_state.current_location = "Starting Location";
+        std::string opening = "A new adventure begins";
+        if (!params.world_prompt.empty()) {
+            opening += ": " + params.world_prompt;
+        }
+        opening += ".";
+        state_.story.push_back(Message{"system", opening, 0});
+        state_.suggested_actions = {"Look around", "Check your belongings", "Set out"};
+        reload_agent_ = true; // a new game starts a fresh game-master conversation
+        streaming_text_.clear();
+        status_.clear();
+    }
+    save();
 }
 
 void Engine::submit_turn(const std::string& player_action) {

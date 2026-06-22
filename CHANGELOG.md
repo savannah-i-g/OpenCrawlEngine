@@ -46,3 +46,7 @@ follows [Semantic Versioning](https://semver.org/).
 - Interactive skill checks: when the game master sets a check, the player rolls
   (2d6/4d6 + attribute modifier vs difficulty) and the success or failure branch
   is recorded to the story; a skill-check panel drives it.
+- New game and character creation: choose a name, class, background, and a
+  free-text setting; the engine builds the character with its class attributes
+  and a starting kit, resets state, and begins a fresh game-master conversation
+  that builds on the setting. A New Game dialog drives it.
