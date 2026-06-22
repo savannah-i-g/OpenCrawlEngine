@@ -43,3 +43,6 @@ follows [Semantic Versioning](https://semver.org/).
   enemy turns, per-enemy xp/gold rewards (and leveling) as foes fall, and
   victory/defeat/flee resolution with a running combat log. A combat panel
   surfaces enemies, the log, and the available actions.
+- Interactive skill checks: when the game master sets a check, the player rolls
+  (2d6/4d6 + attribute modifier vs difficulty) and the success or failure branch
+  is recorded to the story; a skill-check panel drives it.

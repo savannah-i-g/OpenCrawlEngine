@@ -29,4 +29,7 @@ SpellGate can_cast_spell(const Player& player);
 // Spell skill-check difficulty: 10 + floor(level / 2).
 int spell_difficulty(int level);
 
+// Looks up a named attribute's value (10 if the name is unknown).
+int attribute_value(const Attributes& attributes, const std::string& name);
+
 } // namespace oce

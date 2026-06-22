@@ -63,6 +63,8 @@ public:
     // Resolves one combat action (attack/defend/flee) synchronously; no-op if a
     // turn is in progress or combat is not active.
     void     combat_action(const std::string& action, int target_index);
+    // Rolls the active skill check, records the outcome to the story, and clears it.
+    void     resolve_skill_check();
     Snapshot snapshot();
     void     wait_idle(); // blocks until no turn is in progress
     bool     save();
