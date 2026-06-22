@@ -76,6 +76,8 @@ struct oce_agent {
     oce_agent_tool tools[OCE_AGENT_MAX_TOOLS];
     size_t tool_count;
     int max_iterations;
+    char* terminal_tools[8];
+    size_t terminal_count;
 };
 
 static bool append_message(oce_agent* ag, const char* role, const char* content,
@@ -148,6 +150,9 @@ void oce_agent_free(oce_agent* ag) {
         free(ag->msgs[i].tool_calls_json);
     }
     free(ag->msgs);
+    for (size_t i = 0; i < ag->terminal_count; ++i) {
+        free(ag->terminal_tools[i]);
+    }
     free(ag);
 }
 
@@ -166,6 +171,30 @@ void oce_agent_set_max_iterations(oce_agent* ag, int max_iterations) {
     if (ag != NULL && max_iterations >= 1) {
         ag->max_iterations = max_iterations;
     }
+}
+
+bool oce_agent_add_terminal_tool(oce_agent* ag, const char* name) {
+    if (ag == NULL || name == NULL || ag->terminal_count >= 8) {
+        return false;
+    }
+    char* copy = dup_str(name);
+    if (copy == NULL) {
+        return false;
+    }
+    ag->terminal_tools[ag->terminal_count++] = copy;
+    return true;
+}
+
+static bool is_terminal_tool(const oce_agent* ag, const char* name) {
+    if (name == NULL) {
+        return false;
+    }
+    for (size_t i = 0; i < ag->terminal_count; ++i) {
+        if (strcmp(ag->terminal_tools[i], name) == 0) {
+            return true;
+        }
+    }
+    return false;
 }
 
 bool oce_agent_seed_message(oce_agent* ag, const char* role, const char* content) {
@@ -371,6 +400,7 @@ oce_agent_status oce_agent_run(oce_agent* ag, const char* user_message,
             break; // model stopped calling tools: the turn is complete
         }
 
+        bool terminal_hit = false;
         for (size_t i = 0; i < t.call_count; ++i) {
             char* result = dispatch_tool(ag, t.calls[i].name ? t.calls[i].name : "", t.calls[i].args);
             const char* content = result ? result : "{\"ok\":false,\"error\":\"tool failed\"}";
@@ -380,8 +410,14 @@ oce_agent_status oce_agent_run(oce_agent* ag, const char* user_message,
             }
             append_message(ag, "tool", content, t.calls[i].id, NULL);
             free(result);
+            if (is_terminal_tool(ag, t.calls[i].name)) {
+                terminal_hit = true;
+            }
         }
         turn_ctx_free(&t);
+        if (terminal_hit) {
+            break; // a turn-ending tool ran: return control to the caller
+        }
     }
 
     free(tools_json);

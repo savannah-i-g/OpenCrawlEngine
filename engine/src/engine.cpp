@@ -841,12 +841,15 @@ std::string Engine::system_prompt() const {
            "- apply_stat_changes: signed deltas to hp, energy, gold, or xp (positive xp may level "
            "the player up).\n"
            "- start_combat / end_combat: begin an encounter (give each enemy a name and level; the "
-           "engine sets their stats) and resolve it (outcome plus any xp, gold, and loot).\n"
+           "engine sets their stats) and resolve it (outcome plus any xp, gold, and loot). Calling "
+           "start_combat ENDS your turn: narrate the lead-up first, then call it, and let the "
+           "player fight before you narrate again.\n"
            "- set_skill_check: when an action is genuinely uncertain, request ONE check on an "
-           "attribute against a difficulty; the engine rolls the dice. Use this sparingly — at "
-           "most one check per player action, and never to retry or follow up a check that was "
-           "just resolved. After a roll resolves, narrate its outcome and let the player act "
-           "again before any further check.\n"
+           "attribute against a difficulty, and include brief on_success and on_failure narration; "
+           "the engine rolls the dice and shows the matching outcome. Calling set_skill_check ENDS "
+           "your turn: narrate the lead-up first, then call it, and wait for the player to roll. "
+           "Use checks sparingly — at most one per player action, and never to retry or chain a "
+           "check that was just resolved.\n"
            "- add_item / add_random_item / remove_item / equip_item / unequip_item: manage the "
            "inventory (add_random_item drops procedurally generated loot).\n"
            "- add_business / add_relation / add_property / add_mount / change_faction: grant "
@@ -950,6 +953,11 @@ bool Engine::ensure_agent() {
         return false;
     }
     register_tools();
+    // Setting a skill check or starting combat hands control to the player, so
+    // end the model's turn there: it must not narrate past the unresolved roll,
+    // re-request endlessly, or run the turn to the iteration limit.
+    oce_agent_add_terminal_tool(agent_, "set_skill_check");
+    oce_agent_add_terminal_tool(agent_, "start_combat");
     // Prime the fresh agent with recent story so a resumed game keeps context.
     {
         std::lock_guard<std::mutex> sl(state_mutex_);

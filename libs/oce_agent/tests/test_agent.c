@@ -142,9 +142,27 @@ static void test_iteration_cap(void) {
     oce_agent_free(ag);
 }
 
+// A terminal tool ends the turn: the always-looping backend would otherwise hit
+// the iteration cap, but marking its tool terminal stops the agent after one call.
+static void test_terminal_tool(void) {
+    add_state as = {0, 0};
+    oce_agent_tool tool = {"add", "{\"type\":\"function\",\"function\":{\"name\":\"add\"}}", add_invoke,
+                           &as};
+    oce_agent_backend backend = {loop_chat, NULL};
+    oce_agent* ag = oce_agent_new(backend, "sys");
+    oce_agent_add_tool(ag, &tool);
+    oce_agent_set_max_iterations(ag, 8);
+    CHECK(oce_agent_add_terminal_tool(ag, "add"));
+    oce_agent_status st = oce_agent_run(ag, "go", NULL, NULL);
+    CHECK(st == OCE_AGENT_OK); // terminated cleanly, not OCE_AGENT_ERR_LIMIT
+    CHECK(as.calls == 1);      // stopped right after the terminal tool's first call
+    oce_agent_free(ag);
+}
+
 int main(void) {
     test_replay();
     test_iteration_cap();
+    test_terminal_tool();
     if (failures == 0) {
         printf("oce_agent: all checks passed\n");
         return 0;

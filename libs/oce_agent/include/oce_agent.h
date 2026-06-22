@@ -72,6 +72,13 @@ void       oce_agent_free(oce_agent* ag);
 
 bool oce_agent_add_tool(oce_agent* ag, const oce_agent_tool* tool);
 void oce_agent_set_max_iterations(oce_agent* ag, int max_iterations);
+
+// Mark a tool as turn-ending: once the model calls it, the agent applies that
+// iteration's tools and then stops, handing control back to the caller instead
+// of prompting the model again. Use for tools that pass control to the player
+// (setting a skill check, starting combat) so the model cannot narrate past the
+// unresolved action or loop. May be called more than once; names are copied.
+bool oce_agent_add_terminal_tool(oce_agent* ag, const char* name);
 bool oce_agent_seed_message(oce_agent* ag, const char* role, const char* content);
 
 oce_agent_status oce_agent_run(oce_agent* ag, const char* user_message,
