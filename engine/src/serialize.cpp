@@ -503,6 +503,8 @@ void write_character_fields(oce_json* root, const GameState& s) {
     oce_json_obj_set(world, "visited_locations", str_array(s.world_state.visited_locations));
     oce_json_obj_set(world, "world_facts", str_array(s.world_state.world_facts));
     oce_json_obj_set_int(world, "time_elapsed", s.world_state.time_elapsed);
+    oce_json_obj_set_str(world, "technology", s.world_state.technology.c_str());
+    oce_json_obj_set_str(world, "magic", s.world_state.magic.c_str());
     oce_json* npcs = oce_json_new_array();
     for (const auto& kv : s.world_state.known_npcs) {
         oce_json_arr_append(npcs, npc_to_json(kv.second));
@@ -614,6 +616,8 @@ void read_character_fields(const oce_json* root, GameState& out) {
         str_array_from(world, "visited_locations", out.world_state.visited_locations);
         str_array_from(world, "world_facts", out.world_state.world_facts);
         out.world_state.time_elapsed = oce_json_get_int(world, "time_elapsed", 0);
+        out.world_state.technology = oce_json_get_str(world, "technology", "");
+        out.world_state.magic = oce_json_get_str(world, "magic", "");
         const oce_json* npcs = oce_json_get(world, "known_npcs");
         if (oce_json_is_array(npcs)) {
             const size_t n = oce_json_arr_len(npcs);

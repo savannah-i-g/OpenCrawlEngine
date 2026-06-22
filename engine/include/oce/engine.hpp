@@ -104,6 +104,9 @@ public:
     // Asks the model to suggest a value for one world parameter given the
     // others; the result surfaces through the snapshot (autofill_value/seq).
     void     request_autofill(const WorldParams& current, const std::string& field);
+    // Acquires a technology/magic-appropriate mount with model-authored flavor,
+    // on the worker thread. Non-blocking.
+    void     acquire_mount();
     void     submit_turn(const std::string& player_action); // non-blocking
     void     cancel_turn();
     // Enqueues one combat action ("attack"/"defend"/"flee"); the worker resolves
@@ -119,6 +122,7 @@ public:
     void     player_unequip(const std::string& slot); // "hand" | "body"
     void     player_consume(const std::string& item_id);
     void     allocate_attribute(const std::string& attribute);
+    int      collect_income(); // collects accrued business income; returns gold gained
     Snapshot snapshot();
     void     wait_idle(); // blocks until no turn is in progress
     bool     save();
@@ -133,6 +137,7 @@ private:
     void        run_turn(const std::string& input);
     void        run_worldgen(const WorldParams& params);
     void        run_autofill(const WorldParams& params, const std::string& field);
+    void        run_acquire_mount();
     void        run_combat(CombatInput action, int target_index, const std::string& item_id);
     // Asks the model for one action per living enemy (Attack fallback on failure).
     std::vector<EnemyAction> choose_enemy_actions();
@@ -186,6 +191,7 @@ private:
     int                     pending_combat_target_ = 0;
     std::string             pending_combat_item_;
     bool                    has_combat_ = false;
+    bool                    has_mount_ = false;
     bool                    stop_ = false;
     oce_agent_cancel        cancel_{};
 

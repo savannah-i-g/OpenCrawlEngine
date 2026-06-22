@@ -2,6 +2,7 @@
 
 #include "oce/engine.hpp"
 #include "oce/rules/character.hpp"
+#include "oce/rules/world.hpp"
 
 #include "imgui.h"
 
@@ -546,14 +547,37 @@ void GamePanels::draw(oce::Engine& engine) {
     // Assets.
     if (show_assets_) {
         if (ImGui::Begin("Assets", &show_assets_)) {
-            if (ImGui::CollapsingHeader("Businesses")) {
+            if (ImGui::CollapsingHeader("Businesses", ImGuiTreeNodeFlags_DefaultOpen)) {
+                int pending = 0;
+                for (const oce::Business& b : s.assets.businesses) {
+                    pending += oce::pending_business_income(b, s.world_state.time_elapsed);
+                }
+                ImGui::BeginDisabled(s.turn_in_progress || pending <= 0);
+                if (ImGui::Button("Collect income")) {
+                    engine.collect_income();
+                }
+                ImGui::EndDisabled();
+                ImGui::SameLine();
+                ImGui::TextDisabled("accrued: %d gold", pending);
                 for (const oce::Business& b : s.assets.businesses) {
                     ImGui::BulletText("%s — %d gold/day", b.name.c_str(), b.income_per_day);
+                }
+                if (s.assets.businesses.empty()) {
+                    ImGui::TextDisabled("None yet.");
                 }
             }
             if (ImGui::CollapsingHeader("Relations")) {
                 for (const oce::Relation& r : s.assets.relations) {
                     ImGui::BulletText("%s (%s, %d)", r.npc_name.c_str(), r.type.c_str(), r.strength);
+                    ImGui::Indent();
+                    if (r.strength >= 25) {
+                        for (const std::string& ben : r.benefits) {
+                            ImGui::TextDisabled("• %s", ben.c_str());
+                        }
+                    } else if (!r.benefits.empty()) {
+                        ImGui::TextDisabled("(benefits unlock as the bond strengthens)");
+                    }
+                    ImGui::Unindent();
                 }
             }
             if (ImGui::CollapsingHeader("Properties")) {
@@ -561,10 +585,25 @@ void GamePanels::draw(oce::Engine& engine) {
                     ImGui::BulletText("%s (%s)", p.name.c_str(), p.type.c_str());
                 }
             }
-            if (ImGui::CollapsingHeader("Mounts")) {
+            if (ImGui::CollapsingHeader("Mounts", ImGuiTreeNodeFlags_DefaultOpen)) {
+                ImGui::BeginDisabled(s.turn_in_progress);
+                if (ImGui::Button("Acquire a mount")) {
+                    engine.acquire_mount();
+                }
+                ImGui::EndDisabled();
+                if (s.turn_in_progress) {
+                    ImGui::SameLine();
+                    ImGui::TextDisabled("Working…");
+                }
                 for (const oce::MountVehicle& m : s.assets.mounts) {
                     ImGui::BulletText("%s (%s) — condition %d", m.name.c_str(), m.type.c_str(),
                                       m.condition);
+                    if (ImGui::IsItemHovered() && !m.description.empty()) {
+                        ImGui::SetTooltip("%s", m.description.c_str());
+                    }
+                }
+                if (s.assets.mounts.empty()) {
+                    ImGui::TextDisabled("None yet.");
                 }
             }
             if (ImGui::CollapsingHeader("Factions")) {
@@ -572,6 +611,15 @@ void GamePanels::draw(oce::Engine& engine) {
                     const oce::Faction& f = kv.second;
                     ImGui::BulletText("%s — standing %d, reputation %d", f.name.c_str(),
                                       f.relationship, f.reputation);
+                    ImGui::Indent();
+                    if (f.relationship >= 25) {
+                        for (const std::string& ben : f.benefits) {
+                            ImGui::TextDisabled("• %s", ben.c_str());
+                        }
+                    } else if (!f.benefits.empty()) {
+                        ImGui::TextDisabled("(benefits unlock at standing 25+)");
+                    }
+                    ImGui::Unindent();
                 }
             }
             if (ImGui::CollapsingHeader("Known NPCs")) {

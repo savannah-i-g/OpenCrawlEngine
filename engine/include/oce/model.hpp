@@ -215,6 +215,8 @@ struct WorldState {
     std::map<std::string, Faction> factions;
     std::vector<std::string> world_facts;
     long long time_elapsed = 0; // minutes
+    std::string technology;     // world technology level (drives the mount roster)
+    std::string magic;          // world magic level (gates fantasy mounts)
 };
 
 enum class CombatOutcomeType { Victory, Defeat, Fled };

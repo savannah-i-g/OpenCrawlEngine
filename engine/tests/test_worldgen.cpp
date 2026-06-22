@@ -28,6 +28,14 @@ extern "C" int wg_mock(void* ctx, const oce_llm_message* msgs, size_t n, const c
         std::snprintf(fr, cap, "stop");
         return OCE_AGENT_BACKEND_OK;
     }
+    if (tools_json != nullptr && std::strstr(tools_json, "describe_mount") != nullptr) {
+        h->on_tool_call("m1", "describe_mount",
+                        "{\"name\":\"Stormwing\",\"description\":\"A swift courser with a silver "
+                        "mane.\"}",
+                        h->user);
+        std::snprintf(fr, cap, "stop");
+        return OCE_AGENT_BACKEND_OK;
+    }
 
     bool have_tool_result = false;
     for (size_t i = 0; i < n; ++i) {
@@ -108,6 +116,19 @@ int main(void) {
     oce::Snapshot s = engine.snapshot();
     CHECK(s.autofill_seq >= 1);
     CHECK(!s.autofill_value.empty());
+
+    // Acquiring a mount draws from the roster and applies model-authored flavor.
+    engine.acquire_mount();
+    engine.wait_idle();
+    oce::GameState g2 = engine.state_copy();
+    CHECK(!g2.assets.mounts.empty());
+    bool flavored = false;
+    for (const oce::MountVehicle& mv : g2.assets.mounts) {
+        if (mv.name == "Stormwing") {
+            flavored = true;
+        }
+    }
+    CHECK(flavored);
 
     if (failures == 0) {
         printf("worldgen: all checks passed\n");

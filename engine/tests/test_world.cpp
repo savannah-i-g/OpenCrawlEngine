@@ -1,4 +1,6 @@
-// Deterministic tests for asset accrual, relationship clamps, and world state.
+// Deterministic tests for asset accrual, relationship clamps, world state, and
+// the mount roster.
+#include "oce/rules/mounts.hpp"
 #include "oce/rules/world.hpp"
 
 #include <cstdio>
@@ -87,6 +89,36 @@ int main(void) {
     g.name = "Merchants";
     upsert_faction(w, g);
     CHECK(w.factions.size() == 1u && w.factions["guild"].name == "Merchants");
+
+    // Pending income mirrors a collection without mutating the business.
+    Business pend;
+    pend.income_per_day = 10;
+    pend.last_collected = 0;
+    CHECK(pending_business_income(pend, 3 * kMinutesPerDay) == 30);
+    CHECK(pend.last_collected == 0); // read-only
+    CHECK(collect_business_income(pend, 3 * kMinutesPerDay) == 30);
+    CHECK(pending_business_income(pend, 3 * kMinutesPerDay) == 0); // now collected
+
+    // Mount roster by technology, with magic gating fantasy mounts.
+    {
+        const std::vector<MountVehicle> stone =
+            available_mounts("Stone Age (Primitive tools)", "None (No magic exists)");
+        CHECK(stone.size() == 1u && stone[0].type == "donkey");
+        const std::vector<MountVehicle> modern = available_mounts("Modern (Present day)", "");
+        CHECK(modern.size() == 5u);
+        const std::vector<MountVehicle> unknown = available_mounts("Nonsense", "");
+        CHECK(unknown.size() == 3u); // falls back to the feudal roster
+        const std::vector<MountVehicle> magical =
+            available_mounts("Medieval (Feudal era)", "Ubiquitous (Everyday occurrence)");
+        CHECK(magical.size() == 6u); // 3 feudal + 3 fantasy
+        bool has_dragon = false;
+        for (const MountVehicle& mv : magical) {
+            if (mv.name == "Young Dragon") {
+                has_dragon = true;
+            }
+        }
+        CHECK(has_dragon);
+    }
 
     if (failures == 0) {
         printf("world: all checks passed\n");
