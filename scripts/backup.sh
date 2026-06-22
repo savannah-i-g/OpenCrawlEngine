@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Write a timestamped snapshot of the working tree to the backup directory,
 # excluding build output, local reference material, and VCS metadata.
+## (I use this myself, actually worth keeping in here if anyone decides to develop it)
 set -euo pipefail
 
 project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
