@@ -122,6 +122,62 @@ int main(void) {
         CHECK(g >= 1);
     }
 
+    // resolve_combat_turn: defeating the last enemy ends combat in victory with rewards.
+    {
+        GameState gs;
+        gs.player.attributes.strength = 14;
+        gs.combat.active = true;
+        Enemy rat;
+        rat.name = "Rat";
+        rat.hp = 1;
+        rat.max_hp = 1;
+        rat.defense = 0; // every swing lands
+        gs.combat.enemies.push_back(rat);
+        Rng cr(1u);
+        CombatTurnResult res = resolve_combat_turn(gs, cr, CombatAction::Attack, 0);
+        CHECK(res.combat_ended && res.outcome == CombatOutcomeType::Victory);
+        CHECK(!gs.combat.active && gs.combat.enemies.empty());
+        CHECK(res.xp_awarded >= 10 && res.gold_awarded >= 1);
+        CHECK(!gs.combat.log.empty());
+    }
+
+    // A surviving enemy strikes back: the player loses hp and combat continues.
+    {
+        GameState gs;
+        gs.combat.active = true;
+        Enemy ogre;
+        ogre.name = "Ogre";
+        ogre.hp = 100;
+        ogre.max_hp = 100;
+        ogre.defense = 99; // the player almost certainly misses
+        ogre.attack = 10;  // 2d6+10 vs the player's defense always hits
+        gs.combat.enemies.push_back(ogre);
+        const int hp_before = gs.player.hp;
+        Rng cr(2u);
+        CombatTurnResult res = resolve_combat_turn(gs, cr, CombatAction::Attack, 0);
+        CHECK(!res.combat_ended && gs.combat.active);
+        CHECK(gs.player.hp < hp_before);
+    }
+
+    // Flee with high dexterity and luck always succeeds.
+    {
+        GameState gs;
+        gs.player.attributes.dexterity = 20; // mod +5
+        gs.player.attributes.luck = 20;      // mod +5; 2d6+10 >= 10 always
+        gs.combat.active = true;
+        Enemy bandit;
+        bandit.name = "Bandit";
+        bandit.hp = 10;
+        bandit.max_hp = 10;
+        bandit.defense = 10;
+        bandit.attack = 2;
+        gs.combat.enemies.push_back(bandit);
+        Rng cr(3u);
+        CombatTurnResult res = resolve_combat_turn(gs, cr, CombatAction::Flee, 0);
+        CHECK(res.combat_ended && res.outcome == CombatOutcomeType::Fled);
+        CHECK(!gs.combat.active);
+    }
+
     if (failures == 0) {
         printf("combat: all checks passed\n");
         return 0;

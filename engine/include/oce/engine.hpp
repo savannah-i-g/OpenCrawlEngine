@@ -60,6 +60,9 @@ public:
     bool     set_api_key(const std::string& key);
     void     submit_turn(const std::string& player_action); // non-blocking
     void     cancel_turn();
+    // Resolves one combat action (attack/defend/flee) synchronously; no-op if a
+    // turn is in progress or combat is not active.
+    void     combat_action(const std::string& action, int target_index);
     Snapshot snapshot();
     void     wait_idle(); // blocks until no turn is in progress
     bool     save();

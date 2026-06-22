@@ -2,6 +2,7 @@
 
 #include "oce/gm/tools.hpp"
 #include "oce/rules/character.hpp"
+#include "oce/rules/combat.hpp"
 
 #include "oce_json.h"
 #include "oce_llm.h"
@@ -268,12 +269,40 @@ void Engine::cancel_turn() {
     cancel_.flag = 1;
 }
 
+void Engine::combat_action(const std::string& action, int target_index) {
+    CombatAction a;
+    if (action == "attack") {
+        a = CombatAction::Attack;
+    } else if (action == "defend") {
+        a = CombatAction::Defend;
+    } else if (action == "flee") {
+        a = CombatAction::Flee;
+    } else {
+        return;
+    }
+    bool ended = false;
+    {
+        std::lock_guard<std::mutex> sl(state_mutex_);
+        if (turn_in_progress_ || !state_.combat.active) {
+            return;
+        }
+        ended = resolve_combat_turn(state_, rng_, a, target_index).combat_ended;
+    }
+    if (ended) {
+        save();
+    }
+}
+
 Snapshot Engine::snapshot() {
     std::lock_guard<std::mutex> sl(state_mutex_);
     Snapshot s;
     s.player = state_.player;
+    s.inventory = state_.inventory;
+    s.equipment = state_.equipment;
     s.story = state_.story;
     s.suggested_actions = state_.suggested_actions;
+    s.combat = state_.combat;
+    s.skill_check = state_.skill_check;
     s.streaming_text = streaming_text_;
     s.turn_in_progress = turn_in_progress_;
     s.status = status_;
