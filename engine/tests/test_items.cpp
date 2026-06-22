@@ -164,6 +164,33 @@ int main(void) {
     CHECK(std::string(class_to_string(CharacterClass::Rogue)) == "rogue");
     CHECK(!class_from_string("paladin", c));
 
+    // Procedural generation: deterministic, prefixed, and well-formed.
+    {
+        Rng r1(42u);
+        Rng r2(42u);
+        const Item a = random_item(r1, 5);
+        const Item b = random_item(r2, 5);
+        CHECK(a.name == b.name && a.rarity == b.rarity); // same seed -> same item
+        CHECK(!a.name.empty());
+
+        Rng r3(7u);
+        const Item leg = random_item(r3, 1, ItemRarity::Legendary);
+        CHECK(leg.rarity == ItemRarity::Legendary);
+        CHECK(leg.name.rfind("Fabled ", 0) == 0); // rarity prefix
+
+        Rng r4(99u);
+        for (int i = 0; i < 40; ++i) {
+            const Item it = random_item(r4, 10);
+            if (it.kind == ItemKind::Weapon) {
+                CHECK(it.effects.strength > 0);
+            } else if (it.kind == ItemKind::Armor) {
+                CHECK(it.effects.constitution > 0);
+            } else {
+                CHECK(it.effects.hp > 0 || it.effects.energy > 0);
+            }
+        }
+    }
+
     if (failures == 0) {
         printf("items: all checks passed\n");
         return 0;

@@ -114,6 +114,40 @@ const char* difficulty_to_string(Difficulty d) {
     return "normal";
 }
 
+bool allocate_attribute(Player& player, const std::string& attribute) {
+    if (player.attribute_points <= 0) {
+        return false;
+    }
+    Attributes& a = player.attributes;
+    int* slot = nullptr;
+    if (attribute == "strength") {
+        slot = &a.strength;
+    } else if (attribute == "dexterity") {
+        slot = &a.dexterity;
+    } else if (attribute == "intelligence") {
+        slot = &a.intelligence;
+    } else if (attribute == "constitution") {
+        slot = &a.constitution;
+    } else if (attribute == "wisdom") {
+        slot = &a.wisdom;
+    } else if (attribute == "charisma") {
+        slot = &a.charisma;
+    } else if (attribute == "luck") {
+        slot = &a.luck;
+    } else if (attribute == "perception") {
+        slot = &a.perception;
+    } else if (attribute == "stealth") {
+        slot = &a.stealth;
+    } else if (attribute == "bartering") {
+        slot = &a.bartering;
+    } else {
+        return false;
+    }
+    *slot += 1;
+    player.attribute_points -= 1;
+    return true;
+}
+
 bool difficulty_from_string(const std::string& s, Difficulty& out) {
     if (s == "easy") {
         out = Difficulty::Easy;

@@ -66,6 +66,71 @@ Item generate_item(const std::string& id, const std::string& name, const std::st
 
 namespace {
 
+// Procedural-generation catalog: archetypes and rarity-derived name prefixes.
+struct ItemArchetype {
+    const char* noun;
+    ItemKind kind;
+    ItemSlot slot;
+    int base_power;
+    bool restores_energy;
+};
+
+const ItemArchetype kArchetypes[] = {
+    {"Sword", ItemKind::Weapon, ItemSlot::Hand, 3, false},
+    {"Axe", ItemKind::Weapon, ItemSlot::Hand, 4, false},
+    {"Dagger", ItemKind::Weapon, ItemSlot::Hand, 2, false},
+    {"Mace", ItemKind::Weapon, ItemSlot::Hand, 3, false},
+    {"Spear", ItemKind::Weapon, ItemSlot::Hand, 3, false},
+    {"Longbow", ItemKind::Weapon, ItemSlot::Hand, 3, false},
+    {"Battle Staff", ItemKind::Weapon, ItemSlot::Hand, 2, false},
+    {"Leather Armor", ItemKind::Armor, ItemSlot::Body, 2, false},
+    {"Chainmail", ItemKind::Armor, ItemSlot::Body, 3, false},
+    {"Plate Armor", ItemKind::Armor, ItemSlot::Body, 4, false},
+    {"Padded Robe", ItemKind::Armor, ItemSlot::Body, 1, false},
+    {"Tower Shield", ItemKind::Armor, ItemSlot::Body, 2, false},
+    {"Health Potion", ItemKind::Potion, ItemSlot::Consumable, 20, false},
+    {"Energy Draught", ItemKind::Potion, ItemSlot::Consumable, 15, true},
+};
+
+// Indexed by ItemRarity (Common .. Legendary).
+const char* const kRarityPrefix[] = {"Worn", "Sturdy", "Fine", "Exquisite", "Fabled"};
+
+} // namespace
+
+ItemRarity roll_item_rarity(Rng& rng, int level) {
+    const int roll = rng.between(1, 100) + (level > 0 ? level * 2 : 0);
+    if (roll >= 98) {
+        return ItemRarity::Legendary;
+    }
+    if (roll >= 90) {
+        return ItemRarity::Epic;
+    }
+    if (roll >= 72) {
+        return ItemRarity::Rare;
+    }
+    if (roll >= 45) {
+        return ItemRarity::Uncommon;
+    }
+    return ItemRarity::Common;
+}
+
+Item random_item(Rng& rng, int level, ItemRarity rarity) {
+    const int count = static_cast<int>(sizeof kArchetypes / sizeof kArchetypes[0]);
+    const ItemArchetype& a = kArchetypes[rng.between(0, count - 1)];
+    const std::string name = std::string(kRarityPrefix[static_cast<int>(rarity)]) + " " + a.noun;
+    const std::string id = "item-" + std::to_string(rng.between(100000, 999999));
+    const int power = a.base_power + (level > 0 ? level / 3 : 0);
+    return generate_item(id, name, "A find of uncertain provenance.", a.kind, a.slot, rarity, power,
+                         a.restores_energy);
+}
+
+Item random_item(Rng& rng, int level) {
+    const ItemRarity rarity = roll_item_rarity(rng, level);
+    return random_item(rng, level, rarity);
+}
+
+namespace {
+
 std::vector<Item>::iterator find_by_id(std::vector<Item>& inventory, const std::string& id) {
     return std::find_if(inventory.begin(), inventory.end(),
                         [&id](const Item& it) { return it.id == id; });

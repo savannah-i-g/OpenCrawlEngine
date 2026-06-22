@@ -2,6 +2,7 @@
 // Item generation and inventory operations.
 
 #include "oce/model.hpp"
+#include "oce/rules/dice.hpp"
 
 #include <string>
 #include <vector>
@@ -18,6 +19,15 @@ int potion_rarity_bonus(ItemRarity rarity);        // 15..100
 Item generate_item(const std::string& id, const std::string& name, const std::string& description,
                    ItemKind kind, ItemSlot slot, ItemRarity rarity, int base_power,
                    bool restores_energy);
+
+// Rolls an item rarity, biased upward by level (higher levels find better gear).
+ItemRarity roll_item_rarity(Rng& rng, int level);
+
+// Procedurally generates an item: a random archetype (weapon, armor, or potion)
+// named with a rarity-derived prefix, its power scaled by level. The first form
+// rolls the rarity (level-biased); the second forces it. Ids are random.
+Item random_item(Rng& rng, int level);
+Item random_item(Rng& rng, int level, ItemRarity rarity);
 
 // Equips an inventory item into its matching slot, returning any previously
 // equipped item to the inventory. False if the id is absent or not equippable.

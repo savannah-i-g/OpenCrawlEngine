@@ -50,6 +50,78 @@ oce::Difficulty difficulty_by_index(int index) {
     }
 }
 
+ImVec4 rarity_color(oce::ItemRarity r) {
+    switch (r) {
+        case oce::ItemRarity::Common:
+            return ImVec4(0.80f, 0.80f, 0.80f, 1.0f);
+        case oce::ItemRarity::Uncommon:
+            return ImVec4(0.40f, 0.85f, 0.40f, 1.0f);
+        case oce::ItemRarity::Rare:
+            return ImVec4(0.40f, 0.60f, 1.00f, 1.0f);
+        case oce::ItemRarity::Epic:
+            return ImVec4(0.75f, 0.45f, 0.95f, 1.0f);
+        case oce::ItemRarity::Legendary:
+            return ImVec4(1.00f, 0.65f, 0.20f, 1.0f);
+    }
+    return ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
+}
+
+const char* rarity_label(oce::ItemRarity r) {
+    switch (r) {
+        case oce::ItemRarity::Common:
+            return "Common";
+        case oce::ItemRarity::Uncommon:
+            return "Uncommon";
+        case oce::ItemRarity::Rare:
+            return "Rare";
+        case oce::ItemRarity::Epic:
+            return "Epic";
+        case oce::ItemRarity::Legendary:
+            return "Legendary";
+    }
+    return "Common";
+}
+
+const char* kind_label(oce::ItemKind k) {
+    switch (k) {
+        case oce::ItemKind::Weapon:
+            return "weapon";
+        case oce::ItemKind::Armor:
+            return "armor";
+        case oce::ItemKind::Potion:
+            return "potion";
+    }
+    return "item";
+}
+
+std::string effects_summary(const oce::ItemEffects& e) {
+    std::string out;
+    auto add = [&out](const char* label, int v) {
+        if (v == 0) {
+            return;
+        }
+        if (!out.empty()) {
+            out += ", ";
+        }
+        out += label;
+        out += (v > 0) ? " +" : " ";
+        out += std::to_string(v);
+    };
+    add("STR", e.strength);
+    add("DEX", e.dexterity);
+    add("INT", e.intelligence);
+    add("CON", e.constitution);
+    add("WIS", e.wisdom);
+    add("CHA", e.charisma);
+    add("LCK", e.luck);
+    add("PER", e.perception);
+    add("STL", e.stealth);
+    add("BAR", e.bartering);
+    add("HP", e.hp);
+    add("EN", e.energy);
+    return out;
+}
+
 } // namespace
 
 GamePanels::GamePanels() {
@@ -101,6 +173,8 @@ void GamePanels::draw(oce::Engine& engine) {
     if (ImGui::Begin("Character")) {
         ImGui::Text("%s", s.player.name.c_str());
         ImGui::TextDisabled("Level %d %s", s.player.level, class_to_string(s.player.cls));
+        ImGui::TextDisabled("%s · %s", s.meta.name.c_str(),
+                            oce::difficulty_to_string(s.meta.difficulty));
         ImGui::Spacing();
 
         const float hp_frac =
@@ -119,6 +193,98 @@ void GamePanels::draw(oce::Engine& engine) {
         if (s.total_tokens > 0) {
             ImGui::TextDisabled("Tokens used: %lld", s.total_tokens);
         }
+    }
+    ImGui::End();
+
+    // Inventory and equipment.
+    if (ImGui::Begin("Inventory")) {
+        ImGui::TextDisabled("Equipped");
+        if (s.equipment.hand.has_value()) {
+            ImGui::TextColored(rarity_color(s.equipment.hand->rarity), "Hand: %s",
+                               s.equipment.hand->name.c_str());
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Unequip##hand")) {
+                engine.player_unequip("hand");
+            }
+        } else {
+            ImGui::TextDisabled("Hand: (empty)");
+        }
+        if (s.equipment.body.has_value()) {
+            ImGui::TextColored(rarity_color(s.equipment.body->rarity), "Body: %s",
+                               s.equipment.body->name.c_str());
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Unequip##body")) {
+                engine.player_unequip("body");
+            }
+        } else {
+            ImGui::TextDisabled("Body: (empty)");
+        }
+
+        ImGui::Separator();
+        ImGui::TextDisabled("Backpack (%zu)", s.inventory.size());
+        if (ImGui::BeginChild("backpack", ImVec2(0.0f, 0.0f), ImGuiChildFlags_Borders)) {
+            for (size_t i = 0; i < s.inventory.size(); ++i) {
+                const oce::Item& it = s.inventory[i];
+                ImGui::PushID((int) i);
+                ImGui::TextColored(rarity_color(it.rarity), "%s", it.name.c_str());
+                if (ImGui::IsItemHovered()) {
+                    ImGui::BeginTooltip();
+                    ImGui::Text("%s %s", rarity_label(it.rarity), kind_label(it.kind));
+                    if (!it.description.empty()) {
+                        ImGui::TextWrapped("%s", it.description.c_str());
+                    }
+                    const std::string eff = effects_summary(it.effects);
+                    if (!eff.empty()) {
+                        ImGui::TextUnformatted(eff.c_str());
+                    }
+                    ImGui::EndTooltip();
+                }
+                ImGui::SameLine();
+                if (it.kind == oce::ItemKind::Potion) {
+                    if (ImGui::SmallButton("Use")) {
+                        engine.player_consume(it.id);
+                    }
+                } else if (ImGui::SmallButton("Equip")) {
+                    engine.player_equip(it.id);
+                }
+                ImGui::PopID();
+            }
+        }
+        ImGui::EndChild();
+    }
+    ImGui::End();
+
+    // Attributes.
+    if (ImGui::Begin("Attributes")) {
+        if (s.player.attribute_points > 0) {
+            ImGui::Text("Points available: %d", s.player.attribute_points);
+        } else {
+            ImGui::TextDisabled("No points to allocate");
+        }
+        ImGui::Separator();
+        const oce::Attributes& a = s.player.attributes;
+        const bool can = s.player.attribute_points > 0 && !s.turn_in_progress;
+        auto row = [&](const char* label, const char* key, int value) {
+            ImGui::Text("%-13s %2d", label, value);
+            if (can) {
+                ImGui::SameLine();
+                ImGui::PushID(key);
+                if (ImGui::SmallButton("+")) {
+                    engine.allocate_attribute(key);
+                }
+                ImGui::PopID();
+            }
+        };
+        row("Strength", "strength", a.strength);
+        row("Dexterity", "dexterity", a.dexterity);
+        row("Intelligence", "intelligence", a.intelligence);
+        row("Constitution", "constitution", a.constitution);
+        row("Wisdom", "wisdom", a.wisdom);
+        row("Charisma", "charisma", a.charisma);
+        row("Luck", "luck", a.luck);
+        row("Perception", "perception", a.perception);
+        row("Stealth", "stealth", a.stealth);
+        row("Bartering", "bartering", a.bartering);
     }
     ImGui::End();
 
