@@ -3,7 +3,7 @@
 # frontend from a local game-icons.net SVG export into app/ui/assets/icons/.
 # The icons are licensed CC BY 3.0 — see NOTICE.md for attribution. Re-run only
 # to add or refresh icons; the copied SVGs are committed to the repository.
-#
+# (Keeping here because if you want to add icons, the game-icons package is huge, change the folders around if it isn't in your downloads)
 # Usage: scripts/copy_icons.sh [path-to-game-icons-export]
 #   default export path: $HOME/Downloads/game-icons.net.svg
 set -euo pipefail
