@@ -861,7 +861,9 @@ std::string Engine::system_prompt() const {
            "appear to the player as clickable buttons. Your narration is pure in-world "
            "second-person prose: NEVER write a list of options or a \"what do you do?\" menu, and "
            "NEVER mention tools, function or tool names (such as set_suggested_actions), or emit "
-           "JSON in the narration.\n\n"
+           "JSON in the narration. NEVER write planning notes, step-by-step intentions, or phrases "
+           "like \"Now I'll...\", \"Let me...\", or \"I'll narrate...\"; output only the story "
+           "prose itself, with no Markdown headings.\n\n"
            "Tint vivid keywords with colour tags for atmosphere — wrap a word or short phrase like "
            "<green>verdant moss</green>, <red>fresh blood</red>, <blue>frozen lake</blue>, "
            "<gold>ancient treasure</gold>, <purple>arcane energy</purple>, or <gray>cold "
@@ -953,9 +955,13 @@ bool Engine::ensure_agent() {
         return false;
     }
     register_tools();
-    // Setting a skill check or starting combat hands control to the player, so
-    // end the model's turn there: it must not narrate past the unresolved roll,
-    // re-request endlessly, or run the turn to the iteration limit.
+    // These tools end the model's turn. set_suggested_actions is the game
+    // master's sign-off, so the turn stops there and the final narration is the
+    // last assistant message (we commit only that, dropping inter-tool planning
+    // chatter). set_skill_check and start_combat hand control to the player, so
+    // the model cannot narrate past the unresolved roll, re-request endlessly, or
+    // run the turn to the iteration limit.
+    oce_agent_add_terminal_tool(agent_, "set_suggested_actions");
     oce_agent_add_terminal_tool(agent_, "set_skill_check");
     oce_agent_add_terminal_tool(agent_, "start_combat");
     // Prime the fresh agent with recent story so a resumed game keeps context.
@@ -1074,8 +1080,15 @@ void Engine::run_turn(const std::string& input) {
 
     {
         std::lock_guard<std::mutex> sl(state_mutex_);
-        if (!streaming_text_.empty()) {
-            state_.story.push_back(Message{"narrator", streaming_text_, 0});
+        // Commit only the game master's final narration (the last assistant
+        // message), so inter-tool planning chatter from earlier iterations does
+        // not leak into the story. Fall back to the streamed text if empty.
+        const char* final_text = (agent_ != nullptr) ? oce_agent_last_text(agent_) : "";
+        const std::string narration =
+            (final_text != nullptr && final_text[0] != '\0') ? std::string(final_text)
+                                                             : streaming_text_;
+        if (!narration.empty()) {
+            state_.story.push_back(Message{"narrator", narration, 0});
         }
         streaming_text_.clear();
         if (st == OCE_AGENT_ERR_CANCELLED) {
@@ -1176,8 +1189,15 @@ void Engine::run_worldgen(const WorldParams& params) {
 
     {
         std::lock_guard<std::mutex> sl(state_mutex_);
-        if (!streaming_text_.empty()) {
-            state_.story.push_back(Message{"narrator", streaming_text_, 0});
+        // Commit only the game master's final narration (the last assistant
+        // message), so inter-tool planning chatter from earlier iterations does
+        // not leak into the story. Fall back to the streamed text if empty.
+        const char* final_text = (agent_ != nullptr) ? oce_agent_last_text(agent_) : "";
+        const std::string narration =
+            (final_text != nullptr && final_text[0] != '\0') ? std::string(final_text)
+                                                             : streaming_text_;
+        if (!narration.empty()) {
+            state_.story.push_back(Message{"narrator", narration, 0});
         }
         streaming_text_.clear();
         if (st == OCE_AGENT_ERR_CANCELLED) {

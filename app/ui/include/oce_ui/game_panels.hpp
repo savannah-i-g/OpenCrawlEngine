@@ -77,6 +77,7 @@ private:
     int  camp_difficulty_ = 1; // Normal
 
     int combat_target_ = 0;
+    bool open_combat_ = false; // request to open the Combat modal (opened at its own scope)
     bool show_skill_ = false;
     long long skill_base_seq_ = 0;
 

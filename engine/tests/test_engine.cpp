@@ -21,7 +21,8 @@ typedef struct {
     int turn;
 } mock_ctx;
 
-// Turn 1: narrate, change hp, set suggested actions. Turn 2: narrate, stop.
+// One turn: narrate, change hp, then set suggested actions (which ends the turn,
+// so the full narration is in this final message). The second branch is a guard.
 extern "C" int mock_chat(void* ctx, const oce_llm_message* msgs, size_t n, const char* tools_json,
                          const oce_llm_handlers* h, char* fr, size_t cap) {
     (void) msgs;
@@ -30,7 +31,7 @@ extern "C" int mock_chat(void* ctx, const oce_llm_message* msgs, size_t n, const
     mock_ctx* m = (mock_ctx*) ctx;
     ++m->turn;
     if (m->turn == 1) {
-        const char* t = "You swing your blade at the goblin.";
+        const char* t = "You swing your blade at the goblin. The goblin reels from the blow.";
         h->on_text(t, strlen(t), h->user);
         h->on_tool_call("c1", "apply_stat_changes", "{\"hp\":-5}", h->user);
         h->on_tool_call("c2", "set_suggested_actions", "{\"actions\":[\"Flee\",\"Fight on\"]}",

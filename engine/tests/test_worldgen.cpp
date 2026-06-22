@@ -45,6 +45,10 @@ extern "C" int wg_mock(void* ctx, const oce_llm_message* msgs, size_t n, const c
         }
     }
     if (!have_tool_result) {
+        // Narrate in the same message as the tools: set_suggested_actions ends
+        // the turn, and the engine commits this final narration.
+        const char* opening = "You stand at Skyport Lumen as airships drift overhead.";
+        h->on_text(opening, std::strlen(opening), h->user);
         h->on_tool_call("w1", "set_world",
                         "{\"world_description\":\"A sky realm of floating isles.\","
                         "\"starting_location\":\"Skyport Lumen\","

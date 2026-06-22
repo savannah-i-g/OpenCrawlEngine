@@ -883,7 +883,7 @@ void GamePanels::build_layout(oce::Engine& engine, const oce::Snapshot& s) {
                     ImGui::SameLine();
                     if (ImGui::Button("Combat!  —  engage", ImVec2(-1.0f, 38.0f))) {
                         combat_target_ = 0;
-                        ImGui::OpenPopup("Combat");
+                        open_combat_ = true; // OpenPopup must run at the modal's scope
                     }
                 }
                 if (s.skill_check.active && !show_skill_) {
@@ -1839,6 +1839,12 @@ void GamePanels::draw_modals(oce::Engine& engine, const oce::Snapshot& s) {
     }
 
     // ---- Combat (opened by the "Combat!" engage button above the input) ----
+    // OpenPopup must be called in the same ID scope as BeginPopupModal, so the
+    // engage button (in the Story window) only sets a flag we act on here.
+    if (open_combat_) {
+        ImGui::OpenPopup("Combat");
+        open_combat_ = false;
+    }
     ImGui::SetNextWindowSize(ImVec2(560, 660), ImGuiCond_Appearing);
     if (ImGui::BeginPopupModal("Combat", nullptr, ImGuiWindowFlags_NoSavedSettings)) {
         if (!s.combat.active) {
