@@ -7,8 +7,50 @@
 
 #include <cstdio>
 #include <cstring>
+#include <string>
+#include <vector>
 
 namespace oce::ui {
+
+namespace {
+
+// Splits a comma-separated field into trimmed, non-empty entries.
+std::vector<std::string> split_csv(const char* text) {
+    std::vector<std::string> out;
+    std::string cur;
+    auto flush = [&]() {
+        size_t b = cur.find_first_not_of(" \t");
+        size_t e = cur.find_last_not_of(" \t");
+        if (b != std::string::npos) {
+            out.push_back(cur.substr(b, e - b + 1));
+        }
+        cur.clear();
+    };
+    for (const char* p = text; *p != '\0'; ++p) {
+        if (*p == ',') {
+            flush();
+        } else {
+            cur += *p;
+        }
+    }
+    flush();
+    return out;
+}
+
+oce::Difficulty difficulty_by_index(int index) {
+    switch (index) {
+        case 0:
+            return oce::Difficulty::Easy;
+        case 2:
+            return oce::Difficulty::Hard;
+        case 3:
+            return oce::Difficulty::Deadly;
+        default:
+            return oce::Difficulty::Normal;
+    }
+}
+
+} // namespace
 
 GamePanels::GamePanels() {
     input_[0] = '\0';
@@ -17,7 +59,13 @@ GamePanels::GamePanels() {
     new_world_[0] = '\0';
     model_buf_[0] = '\0';
     base_url_buf_[0] = '\0';
+    camp_theme_[0] = '\0';
+    camp_tone_[0] = '\0';
+    camp_goals_[0] = '\0';
+    camp_custom_[0] = '\0';
+    wp_custom_[0] = '\0';
     std::snprintf(new_name_, sizeof new_name_, "%s", "Adventurer");
+    std::snprintf(camp_name_, sizeof camp_name_, "%s", "Adventure");
 }
 
 void GamePanels::draw(oce::Engine& engine) {
@@ -27,6 +75,10 @@ void GamePanels::draw(oce::Engine& engine) {
         if (ImGui::BeginMenu("Game")) {
             if (ImGui::MenuItem("New Game...")) {
                 show_new_game_ = true;
+            }
+            if (ImGui::MenuItem("Characters...")) {
+                show_characters_ = true;
+                characters_ = engine.list_characters();
             }
             if (ImGui::MenuItem("Load Game...")) {
                 show_load_ = true;
@@ -185,21 +237,86 @@ void GamePanels::draw(oce::Engine& engine) {
             const char* classes[] = {"Warrior", "Rogue", "Mage", "Cleric", "Ranger", "Bard"};
             ImGui::Combo("Class", &new_class_, classes, 6);
             ImGui::InputTextMultiline("Background", new_background_, sizeof new_background_,
-                                      ImVec2(0.0f, 60.0f));
-            ImGui::InputTextMultiline("World", new_world_, sizeof new_world_, ImVec2(0.0f, 80.0f));
-            if (ImGui::Button("Begin")) {
-                oce::NewGameParams p;
-                p.name = (new_name_[0] != '\0') ? new_name_ : "Adventurer";
-                const oce::CharacterClass by_index[] = {
-                    oce::CharacterClass::Warrior, oce::CharacterClass::Rogue,
-                    oce::CharacterClass::Mage,    oce::CharacterClass::Cleric,
-                    oce::CharacterClass::Ranger,  oce::CharacterClass::Bard};
-                const int idx = (new_class_ >= 0 && new_class_ < 6) ? new_class_ : 0;
-                p.cls = by_index[idx];
-                p.background = new_background_;
-                p.world_prompt = new_world_;
+                                      ImVec2(0.0f, 50.0f));
+
+            ImGui::SeparatorText("World");
+            ImGui::Combo("Biome", &wp_biome_, oce::BIOME_OPTIONS.data(),
+                         (int) oce::BIOME_OPTIONS.size());
+            ImGui::Combo("Culture", &wp_culture_, oce::CULTURE_OPTIONS.data(),
+                         (int) oce::CULTURE_OPTIONS.size());
+            ImGui::Combo("Population", &wp_population_, oce::POPULATION_OPTIONS.data(),
+                         (int) oce::POPULATION_OPTIONS.size());
+            ImGui::Combo("Technology", &wp_technology_, oce::TECHNOLOGY_OPTIONS.data(),
+                         (int) oce::TECHNOLOGY_OPTIONS.size());
+            ImGui::Combo("Politics", &wp_political_, oce::POLITICAL_OPTIONS.data(),
+                         (int) oce::POLITICAL_OPTIONS.size());
+            ImGui::Combo("Magic", &wp_magic_, oce::MAGIC_OPTIONS.data(),
+                         (int) oce::MAGIC_OPTIONS.size());
+            ImGui::Combo("Species", &wp_species_, oce::SPECIES_OPTIONS.data(),
+                         (int) oce::SPECIES_OPTIONS.size());
+            ImGui::Combo("Threat", &wp_threat_, oce::THREAT_OPTIONS.data(),
+                         (int) oce::THREAT_OPTIONS.size());
+            ImGui::InputText("Custom notes", wp_custom_, sizeof wp_custom_);
+            ImGui::InputTextMultiline("Premise", new_world_, sizeof new_world_, ImVec2(0.0f, 50.0f));
+
+            auto pick = [](const auto& arr, int i) -> std::string {
+                return (i >= 0 && (size_t) i < arr.size()) ? std::string(arr[(size_t) i])
+                                                           : std::string();
+            };
+            auto make_params = [&]() {
+                oce::WorldParams wp;
+                wp.biome = pick(oce::BIOME_OPTIONS, wp_biome_);
+                wp.culture = pick(oce::CULTURE_OPTIONS, wp_culture_);
+                wp.population = pick(oce::POPULATION_OPTIONS, wp_population_);
+                wp.technology = pick(oce::TECHNOLOGY_OPTIONS, wp_technology_);
+                wp.political = pick(oce::POLITICAL_OPTIONS, wp_political_);
+                wp.magic = pick(oce::MAGIC_OPTIONS, wp_magic_);
+                wp.species = pick(oce::SPECIES_OPTIONS, wp_species_);
+                wp.threat = pick(oce::THREAT_OPTIONS, wp_threat_);
+                wp.custom_fields = split_csv(wp_custom_);
+                if (new_world_[0] != '\0') {
+                    wp.custom_fields.emplace_back(new_world_);
+                }
+                return wp;
+            };
+
+            if (ImGui::Button("Suggest premise")) {
+                awaiting_autofill_ = true;
+                last_autofill_seq_ = s.autofill_seq;
+                engine.request_autofill(make_params(), "premise");
+            }
+            if (awaiting_autofill_ && s.autofill_seq > last_autofill_seq_) {
+                std::snprintf(new_world_, sizeof new_world_, "%s", s.autofill_value.c_str());
+                awaiting_autofill_ = false;
+            }
+
+            oce::NewGameParams p;
+            p.name = (new_name_[0] != '\0') ? new_name_ : "Adventurer";
+            const oce::CharacterClass by_index[] = {
+                oce::CharacterClass::Warrior, oce::CharacterClass::Rogue,
+                oce::CharacterClass::Mage,    oce::CharacterClass::Cleric,
+                oce::CharacterClass::Ranger,  oce::CharacterClass::Bard};
+            const int idx = (new_class_ >= 0 && new_class_ < 6) ? new_class_ : 0;
+            p.cls = by_index[idx];
+            p.background = new_background_;
+            p.world_prompt = new_world_;
+
+            ImGui::Separator();
+            ImGui::BeginDisabled(s.turn_in_progress);
+            if (ImGui::Button("Quick Start")) {
                 engine.new_game(p);
                 show_new_game_ = false;
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Generate World")) {
+                engine.new_game(p);
+                engine.generate_world(make_params());
+                show_new_game_ = false;
+            }
+            ImGui::EndDisabled();
+            if (s.turn_in_progress) {
+                ImGui::SameLine();
+                ImGui::TextDisabled("Working…");
             }
         }
         ImGui::End();
@@ -266,6 +383,99 @@ void GamePanels::draw(oce::Engine& engine) {
                 ImGui::TextUnformatted(saves_[i].label.c_str());
                 ImGui::PopID();
             }
+        }
+        ImGui::End();
+    }
+
+    // Character selection.
+    if (show_characters_) {
+        if (ImGui::Begin("Characters", &show_characters_)) {
+            if (ImGui::Button("Refresh")) {
+                characters_ = engine.list_characters();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("New Character...")) {
+                show_new_game_ = true;
+            }
+            ImGui::Separator();
+            if (characters_.empty()) {
+                ImGui::TextDisabled("No characters yet. Create one with New Character.");
+            }
+            for (size_t i = 0; i < characters_.size(); ++i) {
+                ImGui::PushID((int) i);
+                ImGui::TextUnformatted(characters_[i].label.c_str());
+                ImGui::SameLine();
+                if (ImGui::SmallButton("Campaigns")) {
+                    selected_char_ = characters_[i].id;
+                    campaigns_ = engine.list_campaigns(selected_char_);
+                    show_campaigns_ = true;
+                }
+                ImGui::SameLine();
+                if (ImGui::SmallButton("Delete")) {
+                    engine.delete_character(characters_[i].id);
+                    characters_ = engine.list_characters();
+                    ImGui::PopID();
+                    break; // list changed; redraw next frame
+                }
+                ImGui::PopID();
+            }
+        }
+        ImGui::End();
+    }
+
+    // Campaign manager for the selected character.
+    if (show_campaigns_) {
+        if (ImGui::Begin("Campaign Manager", &show_campaigns_)) {
+            if (ImGui::Button("Refresh")) {
+                campaigns_ = engine.list_campaigns(selected_char_);
+            }
+            ImGui::Separator();
+            ImGui::TextDisabled("Campaigns");
+            if (campaigns_.empty()) {
+                ImGui::TextDisabled("None yet — create one below.");
+            }
+            for (size_t i = 0; i < campaigns_.size(); ++i) {
+                ImGui::PushID((int) i);
+                if (ImGui::SmallButton("Play")) {
+                    engine.load_save(campaigns_[i].id);
+                    show_campaigns_ = false;
+                    show_characters_ = false;
+                }
+                ImGui::SameLine();
+                if (ImGui::SmallButton("Delete")) {
+                    engine.delete_campaign(campaigns_[i].id);
+                    campaigns_ = engine.list_campaigns(selected_char_);
+                    ImGui::PopID();
+                    break; // list changed; redraw next frame
+                }
+                ImGui::SameLine();
+                ImGui::TextUnformatted(campaigns_[i].label.c_str());
+                ImGui::PopID();
+            }
+            ImGui::Separator();
+            ImGui::TextDisabled("New campaign");
+            ImGui::InputText("Name##camp", camp_name_, sizeof camp_name_);
+            ImGui::InputText("Theme##camp", camp_theme_, sizeof camp_theme_);
+            ImGui::InputText("Tone##camp", camp_tone_, sizeof camp_tone_);
+            ImGui::InputText("Goals (comma-separated)##camp", camp_goals_, sizeof camp_goals_);
+            const char* diffs[] = {"Easy", "Normal", "Hard", "Deadly"};
+            ImGui::Combo("Difficulty##camp", &camp_difficulty_, diffs, 4);
+            ImGui::InputTextMultiline("Custom prompt##camp", camp_custom_, sizeof camp_custom_,
+                                      ImVec2(0.0f, 60.0f));
+            ImGui::BeginDisabled(selected_char_.empty());
+            if (ImGui::Button("Create campaign")) {
+                oce::CampaignParams cp;
+                cp.name = (camp_name_[0] != '\0') ? camp_name_ : "Adventure";
+                cp.theme = camp_theme_;
+                cp.tone = camp_tone_;
+                cp.custom_prompt = camp_custom_;
+                cp.difficulty = difficulty_by_index(camp_difficulty_);
+                cp.goals = split_csv(camp_goals_);
+                engine.new_campaign(selected_char_, cp);
+                show_campaigns_ = false;
+                show_characters_ = false;
+            }
+            ImGui::EndDisabled();
         }
         ImGui::End();
     }

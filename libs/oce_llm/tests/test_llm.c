@@ -22,7 +22,7 @@ static void test_build_request(void) {
     };
     const char* tools = "[{\"type\":\"function\",\"function\":{\"name\":\"apply_stat_changes\","
                         "\"parameters\":{\"type\":\"object\"}}}]";
-    char* body = oce_llm_build_request_json("test-model", msgs, 2, tools, true);
+    char* body = oce_llm_build_request_json("test-model", msgs, 2, tools, NULL, true);
     CHECK(body != NULL);
 
     oce_json* root = oce_json_parse(body, strlen(body));
@@ -46,6 +46,20 @@ static void test_build_request(void) {
     CHECK(strcmp(oce_json_get_str(root, "tool_choice", ""), "auto") == 0);
 
     oce_json_free(root);
+
+    // A forced tool produces a function-typed tool_choice object.
+    char* forced =
+        oce_llm_build_request_json("test-model", msgs, 2, tools, "apply_stat_changes", true);
+    CHECK(forced != NULL);
+    oce_json* froot = oce_json_parse(forced, strlen(forced));
+    free(forced);
+    CHECK(froot != NULL);
+    const oce_json* tc = oce_json_get(froot, "tool_choice");
+    CHECK(oce_json_is_object(tc));
+    CHECK(strcmp(oce_json_get_str(tc, "type", ""), "function") == 0);
+    const oce_json* fn = oce_json_get(tc, "function");
+    CHECK(strcmp(oce_json_get_str(fn, "name", ""), "apply_stat_changes") == 0);
+    oce_json_free(froot);
 }
 
 typedef struct {

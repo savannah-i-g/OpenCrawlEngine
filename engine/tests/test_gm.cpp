@@ -56,7 +56,21 @@ int main(void) {
     using namespace oce;
     Rng rng(123u);
 
-    CHECK(gm_tools().size() == 17u);
+    CHECK(gm_tools().size() == 18u);
+
+    // set_world establishes the setting, a starting location, and an opening hook.
+    {
+        GameState s;
+        CHECK(ok(call("set_world",
+                      "{\"world_description\":\"A drowned city of canals.\","
+                      "\"starting_location\":\"The Tidewall\","
+                      "\"storyline_hook\":\"Bells toll from below the waterline.\"}",
+                      s, rng)));
+        CHECK(s.world_description == "A drowned city of canals.");
+        CHECK(s.world_state.current_location == "The Tidewall");
+        CHECK(!s.story.empty()); // the hook is recorded as narration
+        CHECK(!ok(call("set_world", "{\"starting_location\":\"x\"}", s, rng))); // description required
+    }
 
     // apply_stat_changes
     {

@@ -19,19 +19,15 @@
 // C-linkage thunks bridging the agent's callbacks to Engine methods.
 extern "C" {
 char* oce_engine_gm_thunk(const char* args, void* user);
+char* oce_engine_capture_thunk(const char* args, void* user);
 void oce_engine_thunk_on_text(const char* d, size_t n, void* user);
 }
 
 namespace oce {
 namespace {
 
-std::string serialize_state(const GameState& s) {
-    return serialize_game_state(s);
-}
-
-void deserialize_state(const char* json, GameState& out) {
-    deserialize_game_state(json, out);
-}
+// The engine persists the character and campaign halves separately; the
+// full-state (de)serializers in serialize.cpp are used by tests.
 
 const char* env_or(const char* name, const char* fallback) {
     const char* v = std::getenv(name);
@@ -112,11 +108,14 @@ Engine::Engine(const EngineConfig& cfg) {
         if (store_ != nullptr && oce_store_char_load(store_, "active", &active) == OCE_STORE_OK &&
             active != nullptr) {
             oce_json* j = oce_json_parse(active, std::strlen(active));
-            const std::string cid = oce_json_get_str(j, "campaign", "");
+            const std::string char_id = oce_json_get_str(j, "character", "");
+            const std::string camp_id = oce_json_get_str(j, "campaign", "");
             oce_json_free(j);
-            if (!cid.empty()) {
-                campaign_id_ = cid;
-                character_id_ = cid;
+            if (!char_id.empty()) {
+                character_id_ = char_id;
+            }
+            if (!camp_id.empty()) {
+                campaign_id_ = camp_id;
             }
         }
         free(active);
@@ -240,13 +239,51 @@ void Engine::new_game(const NewGameParams& params) {
         opening += ".";
         state_.story.push_back(Message{"system", opening, 0});
         state_.suggested_actions = {"Look around", "Check your belongings", "Set out"};
+        state_.meta = CampaignMeta{};
+        character_id_ = "char-" + std::to_string(rng_.between(100000, 999999));
         campaign_id_ = "campaign-" + std::to_string(rng_.between(100000, 999999));
-        character_id_ = campaign_id_;
         reload_agent_ = true; // a new game starts a fresh game-master conversation
         streaming_text_.clear();
         status_.clear();
     }
     save();
+}
+
+void Engine::generate_world(const WorldParams& params) {
+    {
+        std::lock_guard<std::mutex> sl(state_mutex_);
+        if (turn_in_progress_) {
+            return;
+        }
+        turn_in_progress_ = true;
+        reload_agent_ = true; // a generated world starts a fresh game-master conversation
+        status_ = "Generating world…";
+        streaming_text_.clear();
+    }
+    {
+        std::lock_guard<std::mutex> tl(turn_mutex_);
+        pending_world_ = params;
+        has_worldgen_ = true;
+    }
+    turn_cv_.notify_one();
+}
+
+void Engine::request_autofill(const WorldParams& current, const std::string& field) {
+    {
+        std::lock_guard<std::mutex> sl(state_mutex_);
+        if (turn_in_progress_) {
+            return; // a turn or world-gen owns the worker; ignore the request
+        }
+        turn_in_progress_ = true;
+        status_ = "Suggesting…";
+    }
+    {
+        std::lock_guard<std::mutex> tl(turn_mutex_);
+        pending_autofill_ = current;
+        pending_autofill_field_ = field;
+        has_autofill_ = true;
+    }
+    turn_cv_.notify_one();
 }
 
 void Engine::submit_turn(const std::string& player_action) {
@@ -305,10 +342,11 @@ void Engine::resolve_skill_check() {
             return;
         }
         const int mod = modifier(attribute_value(state_.player.attributes, sc.attribute));
-        const SkillCheckResult r = roll_skill_check(rng_, sc.num_dice, mod, sc.difficulty);
-        const std::string note = "Skill check — " + sc.attribute + " (DC " +
-                                 std::to_string(sc.difficulty) + "): rolled " +
-                                 std::to_string(r.total) + (r.success ? " — success." : " — failure.");
+        const int dc = sc.difficulty + difficulty_dc_offset(state_.meta.difficulty);
+        const SkillCheckResult r = roll_skill_check(rng_, sc.num_dice, mod, dc);
+        const std::string note = "Skill check — " + sc.attribute + " (DC " + std::to_string(dc) +
+                                 "): rolled " + std::to_string(r.total) +
+                                 (r.success ? " — success." : " — failure.");
         state_.story.push_back(Message{"system", note, 0});
         const std::string branch = r.success ? sc.on_success : sc.on_failure;
         if (!branch.empty()) {
@@ -340,6 +378,9 @@ Snapshot Engine::snapshot() {
     s.total_tokens = total_tokens_;
     s.model = model_;
     s.base_url = base_url_;
+    s.meta = state_.meta;
+    s.autofill_value = autofill_value_;
+    s.autofill_seq = autofill_seq_;
     return s;
 }
 
@@ -349,20 +390,23 @@ void Engine::wait_idle() {
 }
 
 bool Engine::save() {
-    std::string json;
+    std::string char_json;
+    std::string campaign_json;
     {
         std::lock_guard<std::mutex> sl(state_mutex_);
-        json = serialize_state(state_);
+        char_json = serialize_character(state_);
+        campaign_json = serialize_campaign(state_);
     }
     if (store_ == nullptr) {
         return false;
     }
-    bool ok = oce_store_char_upsert(store_, character_id_.c_str(), "{\"name\":\"default\"}", 1) ==
-              OCE_STORE_OK;
-    ok = (oce_store_campaign_upsert(store_, campaign_id_.c_str(), character_id_.c_str(), json.c_str(),
-                                    1) == OCE_STORE_OK) &&
+    bool ok =
+        oce_store_char_upsert(store_, character_id_.c_str(), char_json.c_str(), 1) == OCE_STORE_OK;
+    ok = (oce_store_campaign_upsert(store_, campaign_id_.c_str(), character_id_.c_str(),
+                                    campaign_json.c_str(), 1) == OCE_STORE_OK) &&
          ok;
-    const std::string active = std::string("{\"campaign\":\"") + campaign_id_ + "\"}";
+    const std::string active = std::string("{\"character\":\"") + character_id_ +
+                               "\",\"campaign\":\"" + campaign_id_ + "\"}";
     oce_store_char_upsert(store_, "active", active.c_str(), 1);
     return ok;
 }
@@ -383,11 +427,10 @@ std::vector<SaveInfo> Engine::list_saves() {
         char* json = nullptr;
         if (oce_store_campaign_load(store_, ids[i], &json) == OCE_STORE_OK && json != nullptr) {
             GameState gs;
-            deserialize_game_state(json, gs);
+            deserialize_campaign(json, gs);
             free(json);
-            info.label = gs.player.name + "  (Lv " + std::to_string(gs.player.level) + " " +
-                         class_to_string(gs.player.cls) + ", " + gs.world_state.current_location +
-                         ")";
+            info.label = gs.meta.name + "  (" + difficulty_to_string(gs.meta.difficulty) + ", " +
+                         std::to_string(gs.story.size()) + " entries)";
         } else {
             info.label = ids[i];
         }
@@ -401,26 +444,161 @@ void Engine::load_save(const std::string& id) {
     if (store_ == nullptr) {
         return;
     }
-    char* json = nullptr;
-    if (oce_store_campaign_load(store_, id.c_str(), &json) != OCE_STORE_OK || json == nullptr) {
+    char* campaign_json = nullptr;
+    if (oce_store_campaign_load(store_, id.c_str(), &campaign_json) != OCE_STORE_OK ||
+        campaign_json == nullptr) {
+        return;
+    }
+    char* owner = nullptr;
+    oce_store_campaign_character(store_, id.c_str(), &owner);
+    char* char_json = nullptr;
+    if (owner != nullptr && owner[0] != '\0') {
+        oce_store_char_load(store_, owner, &char_json);
+    }
+    {
+        std::lock_guard<std::mutex> sl(state_mutex_);
+        if (turn_in_progress_) {
+            free(campaign_json);
+            free(owner);
+            free(char_json);
+            return;
+        }
+        state_ = GameState{};
+        if (char_json != nullptr) {
+            deserialize_character(char_json, state_);
+        }
+        deserialize_campaign(campaign_json, state_);
+        campaign_id_ = id;
+        if (owner != nullptr && owner[0] != '\0') {
+            character_id_ = owner;
+        }
+        reload_agent_ = true;
+        status_.clear();
+        streaming_text_.clear();
+    }
+    free(campaign_json);
+    free(owner);
+    free(char_json);
+    save(); // record this character + campaign as active
+}
+
+std::vector<SaveInfo> Engine::list_characters() {
+    std::vector<SaveInfo> out;
+    if (store_ == nullptr) {
+        return out;
+    }
+    char** ids = nullptr;
+    size_t n = 0;
+    if (oce_store_char_list(store_, &ids, &n) != OCE_STORE_OK) {
+        return out;
+    }
+    for (size_t i = 0; i < n; ++i) {
+        const std::string id = ids[i];
+        if (id == "active" || id == "settings") {
+            continue; // engine-internal rows live in the characters table
+        }
+        SaveInfo info;
+        info.id = id;
+        char* json = nullptr;
+        if (oce_store_char_load(store_, id.c_str(), &json) == OCE_STORE_OK && json != nullptr) {
+            GameState gs;
+            deserialize_character(json, gs);
+            free(json);
+            info.label = gs.player.name + "  (Lv " + std::to_string(gs.player.level) + " " +
+                         class_to_string(gs.player.cls) + ")";
+        } else {
+            info.label = id;
+        }
+        out.push_back(std::move(info));
+    }
+    oce_store_free_strings(ids, n);
+    return out;
+}
+
+std::vector<SaveInfo> Engine::list_campaigns(const std::string& character_id) {
+    std::vector<SaveInfo> out;
+    if (store_ == nullptr) {
+        return out;
+    }
+    char** ids = nullptr;
+    size_t n = 0;
+    if (oce_store_campaign_list(store_, character_id.c_str(), &ids, &n) != OCE_STORE_OK) {
+        return out;
+    }
+    for (size_t i = 0; i < n; ++i) {
+        SaveInfo info;
+        info.id = ids[i];
+        char* json = nullptr;
+        if (oce_store_campaign_load(store_, ids[i], &json) == OCE_STORE_OK && json != nullptr) {
+            GameState gs;
+            deserialize_campaign(json, gs);
+            free(json);
+            info.label = gs.meta.name + "  (" + difficulty_to_string(gs.meta.difficulty) + ", " +
+                         std::to_string(gs.story.size()) + " entries)";
+        } else {
+            info.label = ids[i];
+        }
+        out.push_back(std::move(info));
+    }
+    oce_store_free_strings(ids, n);
+    return out;
+}
+
+void Engine::new_campaign(const std::string& character_id, const CampaignParams& params) {
+    if (store_ == nullptr) {
+        return;
+    }
+    char* char_json = nullptr;
+    if (oce_store_char_load(store_, character_id.c_str(), &char_json) != OCE_STORE_OK ||
+        char_json == nullptr) {
         return;
     }
     {
         std::lock_guard<std::mutex> sl(state_mutex_);
         if (turn_in_progress_) {
-            free(json);
+            free(char_json);
             return;
         }
-        state_ = GameState{};
-        deserialize_game_state(json, state_);
-        campaign_id_ = id;
-        character_id_ = id;
+        GameState fresh;
+        deserialize_character(char_json, fresh); // carry the persistent character forward
+        state_ = std::move(fresh);
+        state_.meta.name = params.name;
+        state_.meta.theme = params.theme;
+        state_.meta.tone = params.tone;
+        state_.meta.goals = params.goals;
+        state_.meta.difficulty = params.difficulty;
+        state_.meta.custom_prompt = params.custom_prompt;
+        state_.story.push_back(Message{"system", "A new chapter begins: " + params.name + ".", 0});
+        state_.suggested_actions = {"Look around", "Recall your purpose", "Set out"};
+        character_id_ = character_id;
+        campaign_id_ = "campaign-" + std::to_string(rng_.between(100000, 999999));
         reload_agent_ = true;
         status_.clear();
         streaming_text_.clear();
     }
-    free(json);
-    save(); // record this campaign as active
+    free(char_json);
+    save();
+}
+
+void Engine::delete_character(const std::string& character_id) {
+    if (store_ == nullptr) {
+        return;
+    }
+    char** ids = nullptr;
+    size_t n = 0;
+    if (oce_store_campaign_list(store_, character_id.c_str(), &ids, &n) == OCE_STORE_OK) {
+        for (size_t i = 0; i < n; ++i) {
+            oce_store_campaign_delete(store_, ids[i]);
+        }
+        oce_store_free_strings(ids, n);
+    }
+    oce_store_char_delete(store_, character_id.c_str());
+}
+
+void Engine::delete_campaign(const std::string& campaign_id) {
+    if (store_ != nullptr) {
+        oce_store_campaign_delete(store_, campaign_id.c_str());
+    }
 }
 
 std::string Engine::dispatch_tool(const GmTool& tool, const char* args_json) {
@@ -518,7 +696,31 @@ bool Engine::ensure_agent() {
         backend = oce_agent_backend_llm(llm_);
     }
 
-    agent_ = oce_agent_new(backend, system_prompt().c_str());
+    std::string prompt = system_prompt();
+    {
+        // Weave the active campaign's framing into the game-master brief.
+        std::lock_guard<std::mutex> sl(state_mutex_);
+        const CampaignMeta& m = state_.meta;
+        prompt += "\n\nThis campaign is \"" + m.name + "\"";
+        if (!m.theme.empty()) {
+            prompt += ", themed around " + m.theme;
+        }
+        if (!m.tone.empty()) {
+            prompt += ", with a " + m.tone + " tone";
+        }
+        prompt += ". Difficulty: " + std::string(difficulty_to_string(m.difficulty)) + ".";
+        if (!m.goals.empty()) {
+            prompt += " The player's goals: ";
+            for (size_t i = 0; i < m.goals.size(); ++i) {
+                prompt += (i != 0 ? "; " : "") + m.goals[i];
+            }
+            prompt += ".";
+        }
+        if (!m.custom_prompt.empty()) {
+            prompt += " " + m.custom_prompt;
+        }
+    }
+    agent_ = oce_agent_new(backend, prompt.c_str());
     if (agent_ == nullptr) {
         return false;
     }
@@ -537,6 +739,64 @@ bool Engine::ensure_agent() {
         }
     }
     return true;
+}
+
+std::string Engine::structured_call(const std::string& system_prompt, const std::string& user_msg,
+                                    const std::string& tool_name,
+                                    const std::string& tool_spec_json) {
+    oce_agent_backend backend;
+    oce_llm* transient = nullptr;
+    if (use_test_backend_) {
+        backend = test_backend_;
+    } else {
+        char key[1024];
+        bool have_key;
+        std::string base_url_copy;
+        std::string model_copy;
+        {
+            std::lock_guard<std::mutex> sl(state_mutex_);
+            have_key = oce_secrets_get(secrets_, "openrouter", key, sizeof key) == OCE_SECRETS_OK;
+            base_url_copy = base_url_;
+            model_copy = model_;
+        }
+        if (!have_key) {
+            return "";
+        }
+        const char* extra[] = {"X-Title: OpenCrawlEngine"};
+        oce_llm_config cfg;
+        cfg.base_url = base_url_copy.c_str();
+        cfg.api_key = key;
+        cfg.model = model_copy.c_str();
+        cfg.extra_headers = extra;
+        cfg.extra_header_count = 1;
+        transient = oce_llm_new(&cfg, http_);
+        oce_secrets_zero(key, sizeof key);
+        if (transient == nullptr) {
+            return "";
+        }
+        oce_llm_set_forced_tool(transient, tool_name.c_str()); // force the single tool
+        backend = oce_agent_backend_llm(transient);
+    }
+
+    oce_agent* ag = oce_agent_new(backend, system_prompt.c_str());
+    if (ag == nullptr) {
+        if (transient != nullptr) {
+            oce_llm_free(transient);
+        }
+        return "";
+    }
+    oce_agent_set_max_iterations(ag, 1); // one model call; capture its tool args
+
+    std::string captured;
+    oce_agent_tool tool = {tool_name.c_str(), tool_spec_json.c_str(), oce_engine_capture_thunk,
+                           &captured};
+    oce_agent_add_tool(ag, &tool);
+    oce_agent_run(ag, user_msg.c_str(), nullptr, &cancel_);
+    oce_agent_free(ag);
+    if (transient != nullptr) {
+        oce_llm_free(transient);
+    }
+    return captured;
 }
 
 void Engine::run_turn(const std::string& input) {
@@ -605,28 +865,183 @@ void Engine::run_turn(const std::string& input) {
     idle_cv_.notify_all();
 }
 
+void Engine::run_worldgen(const WorldParams& params) {
+    cancel_.flag = 0;
+
+    bool reload;
+    {
+        std::lock_guard<std::mutex> sl(state_mutex_);
+        reload = reload_agent_;
+        reload_agent_ = false;
+    }
+    if (reload) {
+        if (agent_ != nullptr) {
+            oce_agent_free(agent_);
+            agent_ = nullptr;
+        }
+        if (llm_ != nullptr) {
+            oce_llm_free(llm_);
+            llm_ = nullptr;
+        }
+    }
+
+    if (!ensure_agent()) {
+        {
+            std::lock_guard<std::mutex> sl(state_mutex_);
+            status_ = "Set your OpenRouter API key in Settings to begin.";
+            turn_in_progress_ = false;
+        }
+        idle_cv_.notify_all();
+        return;
+    }
+
+    std::string brief = "Generate the opening world for a new adventure";
+    {
+        std::lock_guard<std::mutex> sl(state_mutex_);
+        brief += " for a level " + std::to_string(state_.player.level) + " " +
+                 class_to_string(state_.player.cls) + ".\n";
+    }
+    auto add_field = [&brief](const char* label, const std::string& value) {
+        if (!value.empty()) {
+            brief += std::string("- ") + label + ": " + value + "\n";
+        }
+    };
+    add_field("Biome", params.biome);
+    add_field("Culture", params.culture);
+    add_field("Population", params.population);
+    add_field("Technology", params.technology);
+    add_field("Politics", params.political);
+    add_field("Magic", params.magic);
+    add_field("Dominant species", params.species);
+    add_field("Primary threat", params.threat);
+    for (const std::string& note : params.custom_fields) {
+        if (!note.empty()) {
+            brief += "- Note: " + note + "\n";
+        }
+    }
+    brief += "\nCall set_world with a vivid world_description, a starting_location, and an opening "
+             "storyline_hook. Record two or three durable details with add_world_fact. Introduce a "
+             "key faction via change_faction and a notable NPC via upsert_npc. Grant a few fitting "
+             "starting items with add_item. Then narrate the opening scene in vivid second person "
+             "and finish by calling set_suggested_actions with two to four next actions.";
+
+    oce_agent_observer obs = {oce_engine_thunk_on_text, nullptr, this};
+    oce_agent_status st = oce_agent_run(agent_, brief.c_str(), &obs, &cancel_);
+
+    {
+        std::lock_guard<std::mutex> sl(state_mutex_);
+        if (!streaming_text_.empty()) {
+            state_.story.push_back(Message{"narrator", streaming_text_, 0});
+        }
+        streaming_text_.clear();
+        if (st == OCE_AGENT_ERR_CANCELLED) {
+            status_ = "World generation cancelled.";
+        } else if (st != OCE_AGENT_OK) {
+            status_ = "World generation failed. Check your key and model.";
+        } else {
+            status_.clear();
+        }
+        if (llm_ != nullptr) {
+            total_tokens_ = oce_llm_total_usage(llm_).total_tokens;
+        }
+        turn_in_progress_ = false;
+    }
+    save();
+    idle_cv_.notify_all();
+}
+
+void Engine::run_autofill(const WorldParams& params, const std::string& field) {
+    const std::string sys =
+        "You are a world-building assistant. Suggest a single concise value for one parameter of a "
+        "role-playing setting, consistent with the others. Reply only by calling suggest_value.";
+    std::string user = "Suggest a value for the \"" + field + "\" parameter.\nKnown parameters:\n";
+    auto add_field = [&user](const char* label, const std::string& value) {
+        if (!value.empty()) {
+            user += std::string("- ") + label + ": " + value + "\n";
+        }
+    };
+    add_field("Biome", params.biome);
+    add_field("Culture", params.culture);
+    add_field("Population", params.population);
+    add_field("Technology", params.technology);
+    add_field("Politics", params.political);
+    add_field("Magic", params.magic);
+    add_field("Dominant species", params.species);
+    add_field("Primary threat", params.threat);
+    const char* spec =
+        "{\"type\":\"function\",\"function\":{\"name\":\"suggest_value\","
+        "\"description\":\"Provide one suggested value for the requested parameter.\","
+        "\"parameters\":{\"type\":\"object\",\"properties\":{\"value\":{\"type\":\"string\"}},"
+        "\"required\":[\"value\"]}}}";
+    const std::string args = structured_call(sys, user, "suggest_value", spec);
+    std::string value;
+    if (!args.empty()) {
+        oce_json* j = oce_json_parse(args.c_str(), args.size());
+        value = oce_json_get_str(j, "value", "");
+        oce_json_free(j);
+    }
+    {
+        std::lock_guard<std::mutex> sl(state_mutex_);
+        autofill_value_ = value;
+        ++autofill_seq_;
+        status_.clear();
+        turn_in_progress_ = false;
+    }
+    idle_cv_.notify_all();
+}
+
 void Engine::worker_main() {
+    enum class Job { Turn, Worldgen, Autofill };
     for (;;) {
         std::string input;
+        WorldParams world;
+        WorldParams autofill_params;
+        std::string autofill_field;
+        Job job = Job::Turn;
         {
             std::unique_lock<std::mutex> lk(turn_mutex_);
-            turn_cv_.wait(lk, [this] { return has_pending_ || stop_; });
+            turn_cv_.wait(
+                lk, [this] { return has_pending_ || has_worldgen_ || has_autofill_ || stop_; });
             if (stop_) {
                 return;
             }
-            input = std::move(pending_input_);
-            has_pending_ = false;
+            if (has_worldgen_) {
+                world = std::move(pending_world_);
+                has_worldgen_ = false;
+                job = Job::Worldgen;
+            } else if (has_autofill_) {
+                autofill_params = std::move(pending_autofill_);
+                autofill_field = std::move(pending_autofill_field_);
+                has_autofill_ = false;
+                job = Job::Autofill;
+            } else {
+                input = std::move(pending_input_);
+                has_pending_ = false;
+                job = Job::Turn;
+            }
         }
-        run_turn(input);
+        if (job == Job::Worldgen) {
+            run_worldgen(world);
+        } else if (job == Job::Autofill) {
+            run_autofill(autofill_params, autofill_field);
+        } else {
+            run_turn(input);
+        }
     }
 }
 
 void Engine::load_saved_state() {
-    char* json = nullptr;
-    if (oce_store_campaign_load(store_, campaign_id_.c_str(), &json) == OCE_STORE_OK &&
-        json != nullptr) {
-        deserialize_state(json, state_);
-        free(json);
+    char* char_json = nullptr;
+    if (oce_store_char_load(store_, character_id_.c_str(), &char_json) == OCE_STORE_OK &&
+        char_json != nullptr) {
+        deserialize_character(char_json, state_);
+        free(char_json);
+    }
+    char* campaign_json = nullptr;
+    if (oce_store_campaign_load(store_, campaign_id_.c_str(), &campaign_json) == OCE_STORE_OK &&
+        campaign_json != nullptr) {
+        deserialize_campaign(campaign_json, state_);
+        free(campaign_json);
     }
 }
 
@@ -645,6 +1060,15 @@ static char* dup_cstr(const std::string& s) {
 extern "C" char* oce_engine_gm_thunk(const char* args, void* user) {
     oce::ToolBinding* b = static_cast<oce::ToolBinding*>(user);
     return dup_cstr(b->engine->dispatch_tool(*b->tool, args));
+}
+
+// Captures a forced tool call's arguments for oce::Engine::structured_call.
+extern "C" char* oce_engine_capture_thunk(const char* args, void* user) {
+    std::string* out = static_cast<std::string*>(user);
+    if (args != nullptr) {
+        *out = args;
+    }
+    return dup_cstr("{\"ok\":true}");
 }
 
 extern "C" void oce_engine_thunk_on_text(const char* d, size_t n, void* user) {

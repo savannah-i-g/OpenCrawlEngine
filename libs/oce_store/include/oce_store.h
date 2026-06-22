@@ -56,6 +56,10 @@ oce_store_status oce_store_campaign_load(oce_store* s, const char* id, char** js
 oce_store_status oce_store_campaign_list(oce_store* s, const char* character_id, char*** ids_out,
                                          size_t* n_out);
 oce_store_status oce_store_campaign_delete(oce_store* s, const char* id);
+// Copies the character id that owns a campaign into *character_id_out (caller
+// frees). ERR_NOT_FOUND if the campaign is absent.
+oce_store_status oce_store_campaign_character(oce_store* s, const char* campaign_id,
+                                              char** character_id_out);
 
 // Transcript messages (append-only, ordered per campaign).
 oce_store_status oce_store_msg_append(oce_store* s, const char* campaign_id, const char* role,

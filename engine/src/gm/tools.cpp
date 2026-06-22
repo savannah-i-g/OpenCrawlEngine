@@ -477,6 +477,30 @@ std::string add_world_fact_tool(GameState& s, const oce_json* args, Rng&) {
     return kOk;
 }
 
+std::string set_world_tool(GameState& s, const oce_json* args, Rng&) {
+    if (!oce_json_is_object(args)) {
+        return err("invalid arguments");
+    }
+    const std::string description = oce_json_get_str(args, "world_description", "");
+    if (description.empty()) {
+        return err("world_description required");
+    }
+    s.world_description = description;
+    const std::string context = oce_json_get_str(args, "context", "");
+    if (!context.empty()) {
+        s.world_context = context;
+    }
+    const std::string location = oce_json_get_str(args, "starting_location", "");
+    if (!location.empty()) {
+        set_location(s.world_state, location);
+    }
+    const std::string hook = oce_json_get_str(args, "storyline_hook", "");
+    if (!hook.empty()) {
+        s.story.push_back(Message{"narrator", hook, 0});
+    }
+    return kOk;
+}
+
 // --- tool specs (OpenAI function schemas) ---------------------------------
 
 const char* const kSpecApplyStat =
@@ -585,6 +609,14 @@ const char* const kSpecAddWorldFact =
     "\"description\":\"Record a durable fact about the world.\","
     "\"parameters\":{\"type\":\"object\",\"properties\":{\"fact\":{\"type\":\"string\"}},"
     "\"required\":[\"fact\"]}}}";
+const char* const kSpecSetWorld =
+    "{\"type\":\"function\",\"function\":{\"name\":\"set_world\","
+    "\"description\":\"Establish the setting: a vivid world description, optional broader context, "
+    "a starting location, and an opening storyline hook.\","
+    "\"parameters\":{\"type\":\"object\",\"properties\":{"
+    "\"world_description\":{\"type\":\"string\"},\"context\":{\"type\":\"string\"},"
+    "\"starting_location\":{\"type\":\"string\"},\"storyline_hook\":{\"type\":\"string\"}},"
+    "\"required\":[\"world_description\"]}}}";
 
 } // namespace
 
@@ -607,6 +639,7 @@ const std::vector<GmTool>& gm_tools() {
         {"upsert_npc", kSpecUpsertNpc, upsert_npc_tool},
         {"set_location", kSpecSetLocation, set_location_tool},
         {"add_world_fact", kSpecAddWorldFact, add_world_fact_tool},
+        {"set_world", kSpecSetWorld, set_world_tool},
     };
     return tools;
 }

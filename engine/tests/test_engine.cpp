@@ -118,13 +118,16 @@ int main(void) {
         CHECK(!gs.story.empty());
     }
 
-    // Save/load: two campaigns coexist; load switches between them; a restart
-    // resumes whichever was active last.
+    // Character ↔ campaign management: each new_game makes a character with its
+    // first campaign; both characters coexist; loading a campaign restores its
+    // character; a second campaign reuses the persistent character; deleting a
+    // character drops its campaigns; a restart resumes what was active last.
     {
         const char* db2 = "/tmp/oce_engine_saves.db";
         cleanup(db2);
-        std::string alpha_id;
-        std::string beta_id;
+        std::string alpha_char;
+        std::string beta_char;
+        std::string alpha_campaign;
         {
             oce::EngineConfig cfg;
             cfg.store_backend = OCE_STORE_SQLITE;
@@ -139,20 +142,41 @@ int main(void) {
             b.cls = oce::CharacterClass::Rogue;
             engine.new_game(b);
 
-            std::vector<oce::SaveInfo> saves = engine.list_saves();
-            CHECK(saves.size() == 2u);
-            for (const oce::SaveInfo& si : saves) {
+            std::vector<oce::SaveInfo> chars = engine.list_characters();
+            CHECK(chars.size() == 2u);
+            for (const oce::SaveInfo& si : chars) {
                 if (si.label.find("Alpha") != std::string::npos) {
-                    alpha_id = si.id;
+                    alpha_char = si.id;
                 }
                 if (si.label.find("Beta") != std::string::npos) {
-                    beta_id = si.id;
+                    beta_char = si.id;
                 }
             }
-            CHECK(!alpha_id.empty() && !beta_id.empty());
+            CHECK(!alpha_char.empty() && !beta_char.empty());
             CHECK(engine.state_copy().player.name == "Beta"); // last new_game is active
-            engine.load_save(alpha_id);
+
+            std::vector<oce::SaveInfo> alpha_camps = engine.list_campaigns(alpha_char);
+            CHECK(alpha_camps.size() == 1u);
+            alpha_campaign = alpha_camps[0].id;
+
+            // Loading Alpha's campaign restores Alpha as the active character.
+            engine.load_save(alpha_campaign);
             CHECK(engine.state_copy().player.name == "Alpha");
+
+            // A second campaign on Alpha reuses the persistent character.
+            oce::CampaignParams cp;
+            cp.name = "Second Chapter";
+            cp.difficulty = oce::Difficulty::Hard;
+            engine.new_campaign(alpha_char, cp);
+            CHECK(engine.state_copy().player.name == "Alpha");
+            CHECK(engine.state_copy().meta.name == "Second Chapter");
+            CHECK(engine.list_campaigns(alpha_char).size() == 2u);
+
+            // Deleting Beta removes the character and its campaign.
+            engine.delete_character(beta_char);
+            CHECK(engine.list_characters().size() == 1u);
+
+            engine.load_save(alpha_campaign); // make Alpha's first campaign active
             engine.set_model("test/model-x");
         }
         {
@@ -160,7 +184,7 @@ int main(void) {
             cfg.store_backend = OCE_STORE_SQLITE;
             cfg.db_path = db2;
             oce::Engine engine(cfg);
-            CHECK(engine.state_copy().player.name == "Alpha"); // resumes the active campaign
+            CHECK(engine.state_copy().player.name == "Alpha"); // resumes active char+campaign
             CHECK(engine.snapshot().model == "test/model-x");  // provider settings persist
         }
         cleanup(db2);

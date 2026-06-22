@@ -10,6 +10,7 @@
 
 #include "oce/model.hpp"
 #include "oce/rules/dice.hpp"
+#include "oce/rules/worldgen.hpp"
 #include "oce/snapshot.hpp"
 
 #include "oce_agent.h"
@@ -61,6 +62,15 @@ struct SaveInfo {
     std::string label;
 };
 
+struct CampaignParams {
+    std::string name = "Adventure";
+    std::string theme;
+    std::string tone;
+    std::vector<std::string> goals;
+    Difficulty difficulty = Difficulty::Normal;
+    std::string custom_prompt;
+};
+
 class Engine {
 public:
     explicit Engine(const EngineConfig& cfg);
@@ -74,9 +84,22 @@ public:
     void     set_base_url(const std::string& base_url); // persisted; rebuilds the agent
     // Starts a fresh game: creates the character and starting kit, resets state,
     // and begins a new game-master conversation. Synchronous and local.
-    void     new_game(const NewGameParams& params);
-    std::vector<SaveInfo> list_saves();                  // campaigns present in the store
-    void     load_save(const std::string& campaign_id);  // switch to and load a campaign
+    void     new_game(const NewGameParams& params); // new character + first campaign
+    std::vector<SaveInfo> list_saves();                  // every campaign in the store
+    void     load_save(const std::string& campaign_id);  // load a campaign and its character
+    // Character ↔ campaign management.
+    std::vector<SaveInfo> list_characters();
+    std::vector<SaveInfo> list_campaigns(const std::string& character_id);
+    void     new_campaign(const std::string& character_id, const CampaignParams& params);
+    void     delete_character(const std::string& character_id);
+    void     delete_campaign(const std::string& campaign_id);
+    // Generates the opening world from the chosen parameters on the worker
+    // thread (the model authors the setting, factions, and starting gear via
+    // tools). Non-blocking; progress shows through the snapshot.
+    void     generate_world(const WorldParams& params);
+    // Asks the model to suggest a value for one world parameter given the
+    // others; the result surfaces through the snapshot (autofill_value/seq).
+    void     request_autofill(const WorldParams& current, const std::string& field);
     void     submit_turn(const std::string& player_action); // non-blocking
     void     cancel_turn();
     // Resolves one combat action (attack/defend/flee) synchronously; no-op if a
@@ -96,8 +119,15 @@ public:
 private:
     void        worker_main();
     void        run_turn(const std::string& input);
+    void        run_worldgen(const WorldParams& params);
+    void        run_autofill(const WorldParams& params, const std::string& field);
     bool        ensure_agent();
     void        register_tools();
+    // Runs a one-shot model call that is forced to invoke a single named tool,
+    // and returns that tool's raw arguments JSON ("" on failure). Worker-thread
+    // only; uses a transient agent so the game-master conversation is untouched.
+    std::string structured_call(const std::string& system_prompt, const std::string& user_msg,
+                                const std::string& tool_name, const std::string& tool_spec_json);
     void        load_saved_state();
     void        persist_settings(const std::string& model, const std::string& base_url);
     std::string system_prompt() const;
@@ -122,12 +152,19 @@ private:
     bool         turn_in_progress_ = false;
     bool         reload_agent_ = false;
     long long    total_tokens_ = 0;
+    std::string  autofill_value_;
+    long long    autofill_seq_ = 0;
 
     std::mutex              turn_mutex_;
     std::condition_variable turn_cv_;
     std::condition_variable idle_cv_;
     std::string             pending_input_;
     bool                    has_pending_ = false;
+    WorldParams             pending_world_;
+    bool                    has_worldgen_ = false;
+    WorldParams             pending_autofill_;
+    std::string             pending_autofill_field_;
+    bool                    has_autofill_ = false;
     bool                    stop_ = false;
     oce_agent_cancel        cancel_{};
 
