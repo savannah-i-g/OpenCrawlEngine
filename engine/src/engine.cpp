@@ -434,7 +434,9 @@ void Engine::resolve_skill_check() {
                                                                   : "";
         follow_up = "[The " + attribute + " check " + (r.success ? "succeeded" : "failed") + degree +
                     " (rolled " + std::to_string(r.total) + " vs DC " + std::to_string(dc) +
-                    "). Narrate what happens next.]";
+                    "). This check is resolved — narrate its consequence and move the scene "
+                    "forward. Do not request another skill check or repeat this one; let the "
+                    "player act again before any further check.]";
         sc = SkillCheck{};
         changed = true;
     }
@@ -445,6 +447,7 @@ void Engine::resolve_skill_check() {
         {
             std::lock_guard<std::mutex> sl(state_mutex_);
             turn_in_progress_ = true;
+            resolving_check_ = true;
             streaming_text_.clear();
         }
         {
@@ -839,8 +842,11 @@ std::string Engine::system_prompt() const {
            "the player up).\n"
            "- start_combat / end_combat: begin an encounter (give each enemy a name and level; the "
            "engine sets their stats) and resolve it (outcome plus any xp, gold, and loot).\n"
-           "- set_skill_check: when an action is uncertain, request a check on an attribute against "
-           "a difficulty; the engine rolls the dice.\n"
+           "- set_skill_check: when an action is genuinely uncertain, request ONE check on an "
+           "attribute against a difficulty; the engine rolls the dice. Use this sparingly — at "
+           "most one check per player action, and never to retry or follow up a check that was "
+           "just resolved. After a roll resolves, narrate its outcome and let the player act "
+           "again before any further check.\n"
            "- add_item / add_random_item / remove_item / equip_item / unequip_item: manage the "
            "inventory (add_random_item drops procedurally generated loot).\n"
            "- add_business / add_relation / add_property / add_mount / change_faction: grant "
@@ -1022,10 +1028,13 @@ void Engine::run_turn(const std::string& input) {
     cancel_.flag = 0;
 
     bool reload;
+    bool resolving_check;
     {
         std::lock_guard<std::mutex> sl(state_mutex_);
         reload = reload_agent_;
         reload_agent_ = false;
+        resolving_check = resolving_check_;
+        resolving_check_ = false;
     }
     if (reload) {
         if (agent_ != nullptr) {
@@ -1077,6 +1086,12 @@ void Engine::run_turn(const std::string& input) {
             state_.player.gold += income;
             state_.story.push_back(
                 Message{"system", "Your holdings bring in " + std::to_string(income) + " gold.", 0});
+        }
+        // Backstop against skill-check loops: a turn that narrates a just-resolved
+        // check must not itself re-arm one. Drop any check the game master set
+        // here; the player must act again before another check can fire.
+        if (resolving_check && state_.skill_check.active) {
+            state_.skill_check = SkillCheck{};
         }
         turn_in_progress_ = false;
     }
