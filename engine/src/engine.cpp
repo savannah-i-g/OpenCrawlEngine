@@ -513,6 +513,29 @@ void Engine::allocate_attribute(const std::string& attribute) {
     }
 }
 
+std::string Engine::apply_gm_tool(const std::string& tool_name, const std::string& args_json) {
+    const std::vector<GmTool>& tools = gm_tools();
+    const GmTool* found = nullptr;
+    for (const GmTool& t : tools) {
+        if (tool_name == t.name) {
+            found = &t;
+            break;
+        }
+    }
+    if (found == nullptr) {
+        return "{\"ok\":false,\"error\":\"no such tool\"}";
+    }
+    {
+        std::lock_guard<std::mutex> sl(state_mutex_);
+        if (turn_in_progress_) {
+            return "{\"ok\":false,\"error\":\"busy\"}";
+        }
+    }
+    const std::string result = dispatch_tool(*found, args_json.c_str());
+    save();
+    return result;
+}
+
 int Engine::collect_income() {
     int total = 0;
     {
@@ -810,12 +833,17 @@ std::string Engine::system_prompt() const {
            "engine sets their stats) and resolve it (outcome plus any xp, gold, and loot).\n"
            "- set_skill_check: when an action is uncertain, request a check on an attribute against "
            "a difficulty; the engine rolls the dice.\n"
-           "- add_item / remove_item / equip_item / unequip_item: manage the inventory by item id.\n"
+           "- add_item / add_random_item / remove_item / equip_item / unequip_item: manage the "
+           "inventory (add_random_item drops procedurally generated loot).\n"
            "- add_business / add_relation / add_property / add_mount / change_faction: grant "
            "holdings and adjust standing.\n"
-           "- upsert_npc / set_location / add_world_fact: keep the world consistent.\n"
-           "Finish each turn by calling set_suggested_actions with two to four short next "
-           "actions.\n\n"
+           "- set_world / upsert_npc / set_location / add_world_fact: establish and keep the world "
+           "consistent.\n"
+           "ALWAYS end every turn by calling set_suggested_actions with two to four short, "
+           "imperative next actions (e.g. \"Search the room\", \"Talk to the guard\"). They render "
+           "as clickable buttons in the interface, so NEVER write suggested actions, numbered "
+           "option lists, or a \"what do you do?\" menu in your prose — offer them only through the "
+           "tool.\n\n"
            "The engine owns all randomness: never invent dice results or decide whether an attack "
            "or skill check succeeds — call the tool and react to its result. Do not state the "
            "player's numeric stats in the prose; the interface shows them.";
