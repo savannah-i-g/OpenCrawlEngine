@@ -11,6 +11,7 @@ file(GLOB OCE_RULES_SRC CONFIGURE_DEPENDS
 add_library(oce_engine STATIC
     src/version.cpp
     src/engine.cpp
+    src/serialize.cpp
     ${OCE_RULES_SRC})
 
 target_include_directories(oce_engine PUBLIC include)
@@ -47,4 +48,8 @@ if(OCE_BUILD_TESTS)
     add_executable(test_gm tests/test_gm.cpp)
     target_link_libraries(test_gm PRIVATE oce_engine oce_json oce_warnings)
     add_test(NAME gm COMMAND test_gm)
+
+    add_executable(test_serialize tests/test_serialize.cpp)
+    target_link_libraries(test_serialize PRIVATE oce_engine oce_warnings)
+    add_test(NAME serialize COMMAND test_serialize)
 endif()

@@ -24,6 +24,7 @@ private:
     int  new_class_ = 0;
     bool show_settings_ = false;
     bool show_new_game_ = false;
+    bool show_assets_ = false;
 };
 
 } // namespace oce::ui
