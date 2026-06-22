@@ -20,3 +20,14 @@ follows [Semantic Versioning](https://semver.org/).
   worker and local save/load.
 - A game interface: a story log with live streaming narrative, a command input,
   suggested-action buttons, character status, and in-app API-key entry.
+- The full game model: ten attributes, six character classes, items with
+  rarities and effects, equipment, enemies, combat and skill-check state, NPCs,
+  businesses, relations, properties, mounts, factions, and world state.
+- Deterministic rules driven by a seedable RNG — dice and attribute modifiers,
+  the XP curve and level-ups, turn-based combat (attack/defend/flee, enemy
+  derivation, rewards), skill checks and the spellcasting gate, item
+  generation/equip/consume, the per-class character factory, and asset/world
+  bookkeeping — each covered by unit tests.
+- The game master can now adjust energy and experience (with automatic
+  level-ups) alongside health and gold; the interface shows class, level, and
+  energy.

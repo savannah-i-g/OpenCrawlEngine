@@ -4,9 +4,12 @@
 # persistence wiring. It links no UI or graphics libraries, so the whole engine
 # stays unit-testable with OCE_BUILD_UI=OFF.
 
+file(GLOB OCE_RULES_SRC CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/rules/*.cpp)
+
 add_library(oce_engine STATIC
     src/version.cpp
-    src/engine.cpp)
+    src/engine.cpp
+    ${OCE_RULES_SRC})
 
 target_include_directories(oce_engine PUBLIC include)
 target_link_libraries(oce_engine
@@ -22,4 +25,20 @@ if(OCE_BUILD_TESTS)
     add_executable(test_engine tests/test_engine.cpp)
     target_link_libraries(test_engine PRIVATE oce_engine oce_warnings)
     add_test(NAME engine COMMAND test_engine)
+
+    add_executable(test_progression tests/test_progression.cpp)
+    target_link_libraries(test_progression PRIVATE oce_engine oce_warnings)
+    add_test(NAME progression COMMAND test_progression)
+
+    add_executable(test_combat tests/test_combat.cpp)
+    target_link_libraries(test_combat PRIVATE oce_engine oce_warnings)
+    add_test(NAME combat COMMAND test_combat)
+
+    add_executable(test_items tests/test_items.cpp)
+    target_link_libraries(test_items PRIVATE oce_engine oce_warnings)
+    add_test(NAME items COMMAND test_items)
+
+    add_executable(test_world tests/test_world.cpp)
+    target_link_libraries(test_world PRIVATE oce_engine oce_warnings)
+    add_test(NAME world COMMAND test_world)
 endif()
