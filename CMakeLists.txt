@@ -45,6 +45,14 @@ if(OCE_BUILD_TESTS)
 endif()
 
 # --- Modules (each is added once it carries its own CMakeLists.txt) --------
+file(GLOB OCE_LIB_DIRS RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}/libs" "${CMAKE_CURRENT_SOURCE_DIR}/libs/*")
+list(SORT OCE_LIB_DIRS)
+foreach(dir ${OCE_LIB_DIRS})
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/libs/${dir}/CMakeLists.txt")
+        add_subdirectory(libs/${dir})
+    endif()
+endforeach()
+
 add_subdirectory(engine)
 
 if(OCE_BUILD_UI)
