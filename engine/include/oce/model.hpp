@@ -95,6 +95,7 @@ struct CombatState {
     std::vector<Enemy> enemies;
     std::string turn = "player"; // "player" or an enemy id
     std::vector<std::string> log;
+    int player_guard = 0; // transient defensive bonus carried into the enemy phase
 };
 
 struct SkillCheck {

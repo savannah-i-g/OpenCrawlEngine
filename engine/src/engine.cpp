@@ -311,30 +311,53 @@ void Engine::cancel_turn() {
 }
 
 void Engine::combat_action(const std::string& action, int target_index) {
-    CombatAction a;
+    CombatInput a;
     if (action == "attack") {
-        a = CombatAction::Attack;
+        a = CombatInput::Attack;
     } else if (action == "defend") {
-        a = CombatAction::Defend;
+        a = CombatInput::Defend;
     } else if (action == "flee") {
-        a = CombatAction::Flee;
+        a = CombatInput::Flee;
     } else {
         return;
     }
-    bool ended = false;
     {
         std::lock_guard<std::mutex> sl(state_mutex_);
         if (turn_in_progress_ || !state_.combat.active) {
             return;
         }
-        ended = resolve_combat_turn(state_, rng_, a, target_index).combat_ended;
+        turn_in_progress_ = true;
     }
-    if (ended) {
-        save();
+    {
+        std::lock_guard<std::mutex> tl(turn_mutex_);
+        pending_combat_ = a;
+        pending_combat_target_ = target_index;
+        pending_combat_item_.clear();
+        has_combat_ = true;
     }
+    turn_cv_.notify_one();
+}
+
+void Engine::combat_use_item(const std::string& item_id) {
+    {
+        std::lock_guard<std::mutex> sl(state_mutex_);
+        if (turn_in_progress_ || !state_.combat.active) {
+            return;
+        }
+        turn_in_progress_ = true;
+    }
+    {
+        std::lock_guard<std::mutex> tl(turn_mutex_);
+        pending_combat_ = CombatInput::UseItem;
+        pending_combat_target_ = 0;
+        pending_combat_item_ = item_id;
+        has_combat_ = true;
+    }
+    turn_cv_.notify_one();
 }
 
 void Engine::resolve_skill_check() {
+    std::string follow_up;
     bool changed = false;
     {
         std::lock_guard<std::mutex> sl(state_mutex_);
@@ -342,22 +365,46 @@ void Engine::resolve_skill_check() {
         if (turn_in_progress_ || !sc.active) {
             return;
         }
-        const int mod = modifier(attribute_value(state_.player.attributes, sc.attribute));
+        const std::string attribute = sc.attribute;
+        const int mod = modifier(attribute_value(state_.player.attributes, attribute));
         const int dc = sc.difficulty + difficulty_dc_offset(state_.meta.difficulty);
         const SkillCheckResult r = roll_skill_check(rng_, sc.num_dice, mod, dc);
-        const std::string note = "Skill check — " + sc.attribute + " (DC " + std::to_string(dc) +
-                                 "): rolled " + std::to_string(r.total) +
-                                 (r.success ? " — success." : " — failure.");
+        const CheckTier ct = check_tier(r);
+        const char* tier = (ct == CheckTier::CriticalSuccess)   ? " — critical success!"
+                           : (ct == CheckTier::Success)         ? " — success."
+                           : (ct == CheckTier::CriticalFailure) ? " — critical failure!"
+                                                                : " — failure.";
+        const std::string note = "Skill check — " + attribute + " (DC " + std::to_string(dc) +
+                                 "): rolled " + std::to_string(r.total) + tier;
         state_.story.push_back(Message{"system", note, 0});
         const std::string branch = r.success ? sc.on_success : sc.on_failure;
         if (!branch.empty()) {
             state_.story.push_back(Message{"narrator", branch, 0});
         }
+        const char* degree = (ct == CheckTier::CriticalSuccess)    ? " spectacularly"
+                             : (ct == CheckTier::CriticalFailure) ? " disastrously"
+                                                                  : "";
+        follow_up = "[The " + attribute + " check " + (r.success ? "succeeded" : "failed") + degree +
+                    " (rolled " + std::to_string(r.total) + " vs DC " + std::to_string(dc) +
+                    "). Narrate what happens next.]";
         sc = SkillCheck{};
         changed = true;
     }
     if (changed) {
         save();
+        // Auto-continue: enqueue a turn so the game master narrates the outcome,
+        // without adding a spurious player line to the story.
+        {
+            std::lock_guard<std::mutex> sl(state_mutex_);
+            turn_in_progress_ = true;
+            streaming_text_.clear();
+        }
+        {
+            std::lock_guard<std::mutex> tl(turn_mutex_);
+            pending_input_ = follow_up;
+            has_pending_ = true;
+        }
+        turn_cv_.notify_one();
     }
 }
 
@@ -1055,22 +1102,159 @@ void Engine::run_autofill(const WorldParams& params, const std::string& field) {
     idle_cv_.notify_all();
 }
 
+std::vector<EnemyAction> Engine::choose_enemy_actions() {
+    std::string enemy_desc;
+    size_t count = 0;
+    int player_hp = 0;
+    int player_max = 0;
+    {
+        std::lock_guard<std::mutex> sl(state_mutex_);
+        count = state_.combat.enemies.size();
+        player_hp = state_.player.hp;
+        player_max = state_.player.max_hp;
+        for (size_t i = 0; i < count; ++i) {
+            const Enemy& e = state_.combat.enemies[i];
+            enemy_desc += "- index " + std::to_string(i) + ": " + e.name + " (hp " +
+                          std::to_string(e.hp) + "/" + std::to_string(e.max_hp) + ")\n";
+        }
+    }
+    std::vector<EnemyAction> actions(count, EnemyAction::Attack);
+    if (count == 0) {
+        return actions;
+    }
+    const std::string sys =
+        "You direct the enemies in a turn-based fight. For each enemy choose \"attack\" or "
+        "\"defend\" (defend forgoes the strike to brace and recover a little health — sensible when "
+        "an enemy is badly wounded). Reply only by calling choose_enemy_actions.";
+    const std::string user = "Player hp " + std::to_string(player_hp) + "/" +
+                             std::to_string(player_max) + ".\nEnemies:\n" + enemy_desc +
+                             "\nReturn an actions array with one entry per enemy, in index order.";
+    const char* spec =
+        "{\"type\":\"function\",\"function\":{\"name\":\"choose_enemy_actions\","
+        "\"description\":\"Choose each enemy's action for this turn.\","
+        "\"parameters\":{\"type\":\"object\",\"properties\":{\"actions\":{\"type\":\"array\","
+        "\"items\":{\"type\":\"string\",\"enum\":[\"attack\",\"defend\"]}}},"
+        "\"required\":[\"actions\"]}}}";
+    const std::string args = structured_call(sys, user, "choose_enemy_actions", spec);
+    if (!args.empty()) {
+        oce_json* j = oce_json_parse(args.c_str(), args.size());
+        const oce_json* arr = oce_json_get(j, "actions");
+        if (oce_json_is_array(arr)) {
+            const size_t n = oce_json_arr_len(arr);
+            for (size_t i = 0; i < n && i < count; ++i) {
+                EnemyAction a;
+                if (enemy_action_from_string(oce_json_as_str(oce_json_arr_at(arr, i), "attack"),
+                                             a)) {
+                    actions[i] = a;
+                }
+            }
+        }
+        oce_json_free(j);
+    }
+    return actions;
+}
+
+void Engine::seed_combat_outcome(CombatOutcomeType outcome) {
+    if (agent_ == nullptr) {
+        return;
+    }
+    const char* msg = "Combat has ended.";
+    switch (outcome) {
+        case CombatOutcomeType::Victory:
+            msg = "Combat just ended in the player's victory; narrate the aftermath when the player "
+                  "next acts.";
+            break;
+        case CombatOutcomeType::Defeat:
+            msg = "The player was defeated in combat and is gravely wounded; reflect this in the "
+                  "next narration.";
+            break;
+        case CombatOutcomeType::Fled:
+            msg = "The player fled from combat; reflect the escape in the next narration.";
+            break;
+    }
+    oce_agent_seed_message(agent_, "system", msg);
+}
+
+void Engine::run_combat(CombatInput action, int target_index, const std::string& item_id) {
+    cancel_.flag = 0;
+    bool ended = false;
+    CombatOutcomeType outcome = CombatOutcomeType::Victory;
+    bool enemy_phase = false;
+    {
+        std::lock_guard<std::mutex> sl(state_mutex_);
+        if (!state_.combat.active) {
+            turn_in_progress_ = false;
+            idle_cv_.notify_all();
+            return;
+        }
+        if (action == CombatInput::UseItem) {
+            if (consume_item(state_.player, state_.inventory, item_id)) {
+                state_.combat.log.push_back("You use an item.");
+            } else {
+                state_.combat.log.push_back("You reach for an item, but find none to use.");
+            }
+            enemy_phase = state_.combat.active && !state_.combat.enemies.empty();
+        } else {
+            const CombatAction a = (action == CombatInput::Defend) ? CombatAction::Defend
+                                   : (action == CombatInput::Flee) ? CombatAction::Flee
+                                                                   : CombatAction::Attack;
+            const CombatTurnResult r = resolve_player_action(state_, rng_, a, target_index);
+            if (r.combat_ended) {
+                ended = true;
+                outcome = r.outcome;
+            } else {
+                enemy_phase = true;
+            }
+        }
+    }
+
+    if (enemy_phase) {
+        const std::vector<EnemyAction> actions = choose_enemy_actions();
+        std::lock_guard<std::mutex> sl(state_mutex_);
+        const CombatTurnResult r = resolve_enemy_phase(state_, rng_, actions);
+        if (r.combat_ended) {
+            ended = true;
+            outcome = r.outcome;
+        }
+    }
+
+    if (ended) {
+        seed_combat_outcome(outcome);
+    }
+    {
+        std::lock_guard<std::mutex> sl(state_mutex_);
+        turn_in_progress_ = false;
+    }
+    save();
+    idle_cv_.notify_all();
+}
+
 void Engine::worker_main() {
-    enum class Job { Turn, Worldgen, Autofill };
+    enum class Job { Turn, Worldgen, Autofill, Combat };
     for (;;) {
         std::string input;
         WorldParams world;
         WorldParams autofill_params;
         std::string autofill_field;
+        CombatInput combat_kind = CombatInput::Attack;
+        int combat_target = 0;
+        std::string combat_item;
         Job job = Job::Turn;
         {
             std::unique_lock<std::mutex> lk(turn_mutex_);
-            turn_cv_.wait(
-                lk, [this] { return has_pending_ || has_worldgen_ || has_autofill_ || stop_; });
+            turn_cv_.wait(lk, [this] {
+                return has_pending_ || has_worldgen_ || has_autofill_ || has_combat_ || stop_;
+            });
             if (stop_) {
                 return;
             }
-            if (has_worldgen_) {
+            if (has_combat_) {
+                combat_kind = pending_combat_;
+                combat_target = pending_combat_target_;
+                combat_item = std::move(pending_combat_item_);
+                has_combat_ = false;
+                job = Job::Combat;
+            } else if (has_worldgen_) {
                 world = std::move(pending_world_);
                 has_worldgen_ = false;
                 job = Job::Worldgen;
@@ -1085,7 +1269,9 @@ void Engine::worker_main() {
                 job = Job::Turn;
             }
         }
-        if (job == Job::Worldgen) {
+        if (job == Job::Combat) {
+            run_combat(combat_kind, combat_target, combat_item);
+        } else if (job == Job::Worldgen) {
             run_worldgen(world);
         } else if (job == Job::Autofill) {
             run_autofill(autofill_params, autofill_field);

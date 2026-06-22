@@ -50,6 +50,13 @@ int attribute_value(const Attributes& a, const std::string& name) {
     return 10;
 }
 
+CheckTier check_tier(const SkillCheckResult& result) {
+    if (result.success) {
+        return result.margin >= 5 ? CheckTier::CriticalSuccess : CheckTier::Success;
+    }
+    return result.margin <= -5 ? CheckTier::CriticalFailure : CheckTier::Failure;
+}
+
 int difficulty_dc_offset(Difficulty difficulty) {
     switch (difficulty) {
         case Difficulty::Easy:

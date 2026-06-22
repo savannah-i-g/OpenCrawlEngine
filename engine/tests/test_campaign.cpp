@@ -103,6 +103,14 @@ int main(void) {
         CHECK(!allocate_attribute(pl, "strength")); // no points remain
     }
 
+    // Skill-check tiers: a margin of ±5 marks a critical result.
+    {
+        CHECK(check_tier(perform_skill_check(20, 0, 10)) == CheckTier::CriticalSuccess); // +10
+        CHECK(check_tier(perform_skill_check(12, 0, 10)) == CheckTier::Success);          // +2
+        CHECK(check_tier(perform_skill_check(8, 0, 10)) == CheckTier::Failure);           // -2
+        CHECK(check_tier(perform_skill_check(3, 0, 10)) == CheckTier::CriticalFailure);   // -7
+    }
+
     if (failures == 0) {
         printf("campaign: all checks passed\n");
         return 0;

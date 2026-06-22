@@ -9,6 +9,7 @@
 //             are created and destroyed only on the worker thread.
 
 #include "oce/model.hpp"
+#include "oce/rules/combat.hpp"
 #include "oce/rules/dice.hpp"
 #include "oce/rules/worldgen.hpp"
 #include "oce/snapshot.hpp"
@@ -71,6 +72,9 @@ struct CampaignParams {
     std::string custom_prompt;
 };
 
+// A player's combat choice. UseItem consumes a potion as the turn's action.
+enum class CombatInput { Attack, Defend, Flee, UseItem };
+
 class Engine {
 public:
     explicit Engine(const EngineConfig& cfg);
@@ -102,9 +106,12 @@ public:
     void     request_autofill(const WorldParams& current, const std::string& field);
     void     submit_turn(const std::string& player_action); // non-blocking
     void     cancel_turn();
-    // Resolves one combat action (attack/defend/flee) synchronously; no-op if a
-    // turn is in progress or combat is not active.
+    // Enqueues one combat action ("attack"/"defend"/"flee"); the worker resolves
+    // the player action and a model-directed enemy phase. No-op if a turn is in
+    // progress or combat is not active.
     void     combat_action(const std::string& action, int target_index);
+    // Uses a potion as the combat turn's action; the enemy phase follows.
+    void     combat_use_item(const std::string& item_id);
     // Rolls the active skill check, records the outcome to the story, and clears it.
     void     resolve_skill_check();
     // Player-driven inventory and progression actions (synchronous, local).
@@ -126,6 +133,11 @@ private:
     void        run_turn(const std::string& input);
     void        run_worldgen(const WorldParams& params);
     void        run_autofill(const WorldParams& params, const std::string& field);
+    void        run_combat(CombatInput action, int target_index, const std::string& item_id);
+    // Asks the model for one action per living enemy (Attack fallback on failure).
+    std::vector<EnemyAction> choose_enemy_actions();
+    // Seeds the combat outcome into the live game-master conversation.
+    void        seed_combat_outcome(CombatOutcomeType outcome);
     bool        ensure_agent();
     void        register_tools();
     // Runs a one-shot model call that is forced to invoke a single named tool,
@@ -170,6 +182,10 @@ private:
     WorldParams             pending_autofill_;
     std::string             pending_autofill_field_;
     bool                    has_autofill_ = false;
+    CombatInput             pending_combat_ = CombatInput::Attack;
+    int                     pending_combat_target_ = 0;
+    std::string             pending_combat_item_;
+    bool                    has_combat_ = false;
     bool                    stop_ = false;
     oce_agent_cancel        cancel_{};
 
