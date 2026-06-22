@@ -12,6 +12,75 @@ int floor_div2(int x) {
     return (x >= 0) ? (x / 2) : -(((-x) + 1) / 2);
 }
 
+// Flavourful combat-log lines, varied deterministically by the roll value so no
+// extra RNG is drawn and resolution stays reproducible.
+std::string player_hit_line(const std::string& e, int dmg, int seed) {
+    const std::string d = std::to_string(dmg);
+    const int v = (seed % 3 + 3) % 3;
+    if (dmg >= 6) {
+        if (v == 0) return "You crash through " + e + "'s guard for " + d + " damage!";
+        if (v == 1) return "A savage blow staggers " + e + " for " + d + " damage!";
+        return "You hammer " + e + " for a brutal " + d + " damage!";
+    }
+    if (dmg >= 3) {
+        if (v == 0) return "Your strike bites into " + e + " for " + d + " damage.";
+        if (v == 1) return "You land a clean hit on " + e + " for " + d + " damage.";
+        return "Steel meets flesh; " + e + " takes " + d + " damage.";
+    }
+    if (v == 0) return "You graze " + e + " for " + d + " damage.";
+    if (v == 1) return "A glancing blow catches " + e + " for " + d + " damage.";
+    return "You nick " + e + ", dealing " + d + " damage.";
+}
+
+std::string player_miss_line(const std::string& e, int seed) {
+    switch ((seed % 4 + 4) % 4) {
+        case 0:
+            return e + " twists away from your strike.";
+        case 1:
+            return "Your blow glances off " + e + "'s guard.";
+        case 2:
+            return e + " parries, and your attack finds only air.";
+        default:
+            return "You overreach, and " + e + " slips aside.";
+    }
+}
+
+std::string defeat_line(const std::string& e, int seed) {
+    switch ((seed % 3 + 3) % 3) {
+        case 0:
+            return e + " crumples and does not rise.";
+        case 1:
+            return "With a final blow, you fell " + e + ".";
+        default:
+            return e + " collapses, defeated.";
+    }
+}
+
+std::string enemy_hit_line(const std::string& e, int dmg, int seed) {
+    const std::string d = std::to_string(dmg);
+    switch ((seed % 4 + 4) % 4) {
+        case 0:
+            return e + " tears into you for " + d + " damage.";
+        case 1:
+            return "You reel as " + e + " strikes you for " + d + " damage.";
+        case 2:
+            return e + " catches you off guard for " + d + " damage.";
+        default:
+            return e + "'s attack lands hard — " + d + " damage.";
+    }
+}
+
+std::string enemy_miss_line(const std::string& e, int seed) {
+    switch ((seed % 3 + 3) % 3) {
+        case 0:
+            return e + " lunges, but you sidestep.";
+        case 1:
+            return "You turn aside " + e + "'s attack.";
+        default:
+            return e + " swings wide and misses.";
+    }
+}
+
 } // namespace
 
 EnemyBaseStats enemy_base_stats(int level) {
@@ -139,7 +208,7 @@ CombatTurnResult resolve_player_action(GameState& s, Rng& rng, CombatAction acti
 
     if (action == CombatAction::Flee) {
         if (flee_check(rng, s.player)) {
-            c.log.push_back("You flee from the fight.");
+            c.log.push_back("You break away and flee the fight.");
             c.active = false;
             c.enemies.clear();
             c.turn = "player";
@@ -147,10 +216,10 @@ CombatTurnResult resolve_player_action(GameState& s, Rng& rng, CombatAction acti
             result.outcome = CombatOutcomeType::Fled;
             return result;
         }
-        c.log.push_back("You fail to escape.");
+        c.log.push_back("You try to break away, but cannot escape!");
     } else if (action == CombatAction::Defend) {
         c.player_guard = defend_bonus(s.player);
-        c.log.push_back("You take a defensive stance.");
+        c.log.push_back("You raise your guard, bracing for the next blow.");
     } else if (action == CombatAction::Attack && !c.enemies.empty()) {
         if (target_index < 0 || target_index >= (int) c.enemies.size()) {
             target_index = 0;
@@ -170,10 +239,9 @@ CombatTurnResult resolve_player_action(GameState& s, Rng& rng, CombatAction acti
         result.attack_target = enemy_def;
         result.attack_label = "Attack: " + enemy_name + " (DEF " + std::to_string(enemy_def) + ")";
         if (!r.hit) {
-            c.log.push_back("You miss " + enemy_name + ".");
+            c.log.push_back(player_miss_line(enemy_name, r.total));
         } else {
-            c.log.push_back("You hit " + enemy_name + " for " + std::to_string(r.damage) +
-                            " damage.");
+            c.log.push_back(player_hit_line(enemy_name, r.damage, r.total));
             if (r.target_defeated) {
                 const long long xp = xp_reward(c.enemies[idx]);
                 const int gold = gold_reward(rng, s.player.attributes.luck);
@@ -183,10 +251,11 @@ CombatTurnResult resolve_player_action(GameState& s, Rng& rng, CombatAction acti
                 result.xp_awarded += xp;
                 result.gold_awarded += gold;
                 result.levels_gained += levels;
-                c.log.push_back("You defeat " + enemy_name + ". (+" + std::to_string(xp) + " xp, +" +
-                                std::to_string(gold) + " gold)");
+                c.log.push_back(defeat_line(enemy_name, r.total) + " (+" + std::to_string(xp) +
+                                " xp, +" + std::to_string(gold) + " gold)");
                 if (levels > 0) {
-                    c.log.push_back("You reach level " + std::to_string(s.player.level) + "!");
+                    c.log.push_back("You reach level " + std::to_string(s.player.level) +
+                                    "! Your wounds knit and your resolve hardens.");
                 }
                 c.enemies.erase(c.enemies.begin() + target_index);
             }
@@ -194,7 +263,7 @@ CombatTurnResult resolve_player_action(GameState& s, Rng& rng, CombatAction acti
     }
 
     if (c.enemies.empty()) {
-        c.log.push_back("Victory!");
+        c.log.push_back("The last foe falls. Victory is yours!");
         c.active = false;
         c.turn = "player";
         result.combat_ended = true;
@@ -233,13 +302,13 @@ CombatTurnResult resolve_enemy_phase(GameState& s, Rng& rng,
         }
         const AttackResult er = enemy_attack(rng, e, s.player, armor, extra_defense);
         if (!er.hit) {
-            c.log.push_back(e.name + " misses you.");
+            c.log.push_back(enemy_miss_line(e.name, er.total));
             continue;
         }
         s.player.hp = std::max(0, s.player.hp - er.damage);
-        c.log.push_back(e.name + " hits you for " + std::to_string(er.damage) + " damage.");
+        c.log.push_back(enemy_hit_line(e.name, er.damage, er.total));
         if (s.player.hp <= 0) {
-            c.log.push_back("You have fallen.");
+            c.log.push_back("You collapse, the world fading to black...");
             c.active = false;
             c.enemies.clear();
             c.turn = "player";

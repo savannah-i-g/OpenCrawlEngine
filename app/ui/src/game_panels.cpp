@@ -864,61 +864,99 @@ void GamePanels::build_layout(oce::Engine& engine, const oce::Snapshot& s) {
             ImGui::TextDisabled("%s", s.status.c_str());
         }
 
-        // Quick-actions row: model suggestions, then always-present defaults.
-        ImGui::BeginDisabled(s.turn_in_progress);
-        const ImGuiStyle& style = ImGui::GetStyle();
-        const float avail = ImGui::GetContentRegionAvail().x;
-        float used = 0.0f;
-        bool first = true;
-        auto action_button = [&](const char* icon, const std::string& label, bool& clicked) {
-            const float w = ImGui::CalcTextSize(label.c_str()).x + 22.0f + style.FramePadding.x * 2.0f;
-            if (!first && used + style.ItemSpacing.x + w <= avail) {
-                ImGui::SameLine();
-                used += style.ItemSpacing.x + w;
-            } else {
-                used = w;
-            }
-            first = false;
-            ImGui::PushID(label.c_str());
-            clicked = false;
-            if (icons_.has(icon)) {
-                icons_.draw(icon, 14.0f, ImGui::GetStyleColorVec4(ImGuiCol_Text));
-                ImGui::SameLine(0.0f, 4.0f);
-            }
-            clicked = ImGui::SmallButton(label.c_str());
-            ImGui::PopID();
-        };
-        for (const std::string& a : s.suggested_actions) {
-            bool clicked = false;
-            action_button("run", a, clicked);
-            if (clicked) {
-                engine.submit_turn(a);
-            }
-        }
-        bool c1 = false, c2 = false, c3 = false;
-        action_button("scroll-unfurled", "Continue", c1);
-        if (c1) {
-            engine.submit_turn("Continue");
-        }
-        action_button("magnifying-glass", "Look Around", c2);
-        if (c2) {
-            engine.submit_turn("Look around");
-        }
-        action_button("knapsack", "Check Inventory", c3);
-        if (c3) {
-            show_inventory_ = true;
-        }
-        ImGui::EndDisabled();
+        const ImVec4 accent = accent_for(s.theme);
+        const bool pending_roll = s.combat.active || s.skill_check.active;
 
-        ImGui::BeginDisabled(s.turn_in_progress);
+        if (pending_roll) {
+            // A roll is pending: gate further play behind an engage prompt that
+            // appears once the narration has finished streaming.
+            if (s.turn_in_progress) {
+                ImGui::TextDisabled("…");
+            } else {
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(accent.x, accent.y, accent.z, 0.30f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+                                      ImVec4(accent.x, accent.y, accent.z, 0.48f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive,
+                                      ImVec4(accent.x, accent.y, accent.z, 0.62f));
+                if (s.combat.active) {
+                    icons_.draw("crossed-swords", 24.0f, accent);
+                    ImGui::SameLine();
+                    if (ImGui::Button("Combat!  —  engage", ImVec2(-1.0f, 38.0f))) {
+                        combat_target_ = 0;
+                        ImGui::OpenPopup("Combat");
+                    }
+                }
+                if (s.skill_check.active && !show_skill_) {
+                    icons_.draw("dice-six-faces-five", 24.0f, accent);
+                    ImGui::SameLine();
+                    const std::string lbl =
+                        "Skill Check: " + s.skill_check.attribute + "  —  roll";
+                    if (ImGui::Button(lbl.c_str(), ImVec2(-1.0f, 38.0f))) {
+                        show_skill_ = true;
+                        skill_base_seq_ = s.last_roll.seq;
+                    }
+                }
+                ImGui::PopStyleColor(3);
+            }
+        } else {
+            // Quick-actions row: model suggestions, then always-present defaults.
+            ImGui::BeginDisabled(s.turn_in_progress);
+            const ImGuiStyle& style = ImGui::GetStyle();
+            const float avail = ImGui::GetContentRegionAvail().x;
+            float used = 0.0f;
+            bool first = true;
+            auto action_button = [&](const char* icon, const std::string& label, bool& clicked) {
+                const float w =
+                    ImGui::CalcTextSize(label.c_str()).x + 22.0f + style.FramePadding.x * 2.0f;
+                if (!first && used + style.ItemSpacing.x + w <= avail) {
+                    ImGui::SameLine();
+                    used += style.ItemSpacing.x + w;
+                } else {
+                    used = w;
+                }
+                first = false;
+                ImGui::PushID(label.c_str());
+                clicked = false;
+                if (icons_.has(icon)) {
+                    icons_.draw(icon, 14.0f, ImGui::GetStyleColorVec4(ImGuiCol_Text));
+                    ImGui::SameLine(0.0f, 4.0f);
+                }
+                clicked = ImGui::SmallButton(label.c_str());
+                ImGui::PopID();
+            };
+            for (const std::string& a : s.suggested_actions) {
+                bool clicked = false;
+                action_button("run", a, clicked);
+                if (clicked) {
+                    engine.submit_turn(a);
+                }
+            }
+            bool c1 = false, c2 = false, c3 = false;
+            action_button("scroll-unfurled", "Continue", c1);
+            if (c1) {
+                engine.submit_turn("Continue");
+            }
+            action_button("magnifying-glass", "Look Around", c2);
+            if (c2) {
+                engine.submit_turn("Look around");
+            }
+            action_button("knapsack", "Check Inventory", c3);
+            if (c3) {
+                show_inventory_ = true;
+            }
+            ImGui::EndDisabled();
+        }
+
+        // The command box is locked while a turn resolves or a roll is pending.
+        ImGui::BeginDisabled(s.turn_in_progress || pending_roll);
         ImGui::SetNextItemWidth(-90.0f);
-        const bool enter = ImGui::InputTextWithHint("##input", "What do you do?", input_,
-                                                    sizeof input_,
-                                                    ImGuiInputTextFlags_EnterReturnsTrue);
+        const bool enter = ImGui::InputTextWithHint(
+            "##input", pending_roll ? "Resolve the prompt above to continue…" : "What do you do?",
+            input_, sizeof input_, ImGuiInputTextFlags_EnterReturnsTrue);
         ImGui::SameLine();
         const bool send = ImGui::Button("Send", ImVec2(-1.0f, 0.0f));
         ImGui::EndDisabled();
-        if ((enter || send) && input_[0] != '\0' && !s.turn_in_progress) {
+        if ((enter || send) && input_[0] != '\0' && !s.turn_in_progress && !pending_roll) {
             engine.submit_turn(input_);
             input_[0] = '\0';
         }
@@ -1800,10 +1838,7 @@ void GamePanels::draw_modals(oce::Engine& engine, const oce::Snapshot& s) {
         ImGui::End();
     }
 
-    // ---- Combat (auto-open while active) ----
-    if (s.combat.active && !ImGui::IsPopupOpen("Combat")) {
-        ImGui::OpenPopup("Combat");
-    }
+    // ---- Combat (opened by the "Combat!" engage button above the input) ----
     ImGui::SetNextWindowSize(ImVec2(560, 660), ImGuiCond_Appearing);
     if (ImGui::BeginPopupModal("Combat", nullptr, ImGuiWindowFlags_NoSavedSettings)) {
         if (!s.combat.active) {
@@ -1878,12 +1913,7 @@ void GamePanels::draw_modals(oce::Engine& engine, const oce::Snapshot& s) {
         ImGui::EndPopup();
     }
 
-    // ---- Skill Check ----
-    if (s.skill_check.active && !prev_skill_active_) {
-        show_skill_ = true;
-        skill_base_seq_ = s.last_roll.seq; // baseline so we detect this check's roll
-    }
-    prev_skill_active_ = s.skill_check.active;
+    // ---- Skill Check (opened by the "Skill Check" engage button) ----
     if (show_skill_) {
         ImGui::SetNextWindowSize(ImVec2(440, 440), ImGuiCond_Appearing);
         if (ImGui::Begin("Skill Check", &show_skill_)) {
