@@ -108,6 +108,18 @@ struct SkillCheck {
     std::string on_failure;
 };
 
+// The most recent resolved dice roll (skill check or combat attack), surfaced to
+// the UI's roll panels. Transient: not serialized.
+struct DiceRoll {
+    std::string name;        // e.g. "Stealth" or "Attack: Goblin (DEF 7)"
+    std::vector<int> dice;   // individual d6 results
+    int modifier = 0;
+    int total = 0;           // sum(dice) + modifier
+    int target = 0;          // DC or defense to beat
+    bool success = false;
+    long long seq = 0;       // increments per roll; 0 means none yet
+};
+
 struct NPC {
     std::string id;
     std::string name;

@@ -40,6 +40,9 @@ ICONS=(
     spectre cultist hooded-figure pentacle crossed-swords swords-emblem temple-gate church
     gavel anvil mortar shop wheat coins-pile cash dragon-head sailboat horse-head campfire
     chest trophy heart-plus
+    # dice faces (skill/combat roll panels)
+    dice-six-faces-one dice-six-faces-two dice-six-faces-three dice-six-faces-four
+    dice-six-faces-five dice-six-faces-six
 )
 
 copied=0

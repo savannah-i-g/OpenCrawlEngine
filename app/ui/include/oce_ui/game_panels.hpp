@@ -77,6 +77,9 @@ private:
     int  camp_difficulty_ = 1; // Normal
 
     int combat_target_ = 0;
+    bool show_skill_ = false;
+    bool prev_skill_active_ = false;
+    long long skill_base_seq_ = 0;
 
     // Game Master tools form.
     char gm_item_name_[64];
