@@ -36,4 +36,18 @@ int spell_difficulty(int level) {
     return 10 + level / 2;
 }
 
+int attribute_value(const Attributes& a, const std::string& name) {
+    if (name == "strength") return a.strength;
+    if (name == "dexterity") return a.dexterity;
+    if (name == "intelligence") return a.intelligence;
+    if (name == "constitution") return a.constitution;
+    if (name == "wisdom") return a.wisdom;
+    if (name == "charisma") return a.charisma;
+    if (name == "luck") return a.luck;
+    if (name == "perception") return a.perception;
+    if (name == "stealth") return a.stealth;
+    if (name == "bartering") return a.bartering;
+    return 10;
+}
+
 } // namespace oce

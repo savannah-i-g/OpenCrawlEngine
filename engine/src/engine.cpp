@@ -3,6 +3,7 @@
 #include "oce/gm/tools.hpp"
 #include "oce/rules/character.hpp"
 #include "oce/rules/combat.hpp"
+#include "oce/rules/skills.hpp"
 
 #include "oce_json.h"
 #include "oce_llm.h"
@@ -289,6 +290,32 @@ void Engine::combat_action(const std::string& action, int target_index) {
         ended = resolve_combat_turn(state_, rng_, a, target_index).combat_ended;
     }
     if (ended) {
+        save();
+    }
+}
+
+void Engine::resolve_skill_check() {
+    bool changed = false;
+    {
+        std::lock_guard<std::mutex> sl(state_mutex_);
+        SkillCheck& sc = state_.skill_check;
+        if (turn_in_progress_ || !sc.active) {
+            return;
+        }
+        const int mod = modifier(attribute_value(state_.player.attributes, sc.attribute));
+        const SkillCheckResult r = roll_skill_check(rng_, sc.num_dice, mod, sc.difficulty);
+        const std::string note = "Skill check — " + sc.attribute + " (DC " +
+                                 std::to_string(sc.difficulty) + "): rolled " +
+                                 std::to_string(r.total) + (r.success ? " — success." : " — failure.");
+        state_.story.push_back(Message{"system", note, 0});
+        const std::string branch = r.success ? sc.on_success : sc.on_failure;
+        if (!branch.empty()) {
+            state_.story.push_back(Message{"narrator", branch, 0});
+        }
+        sc = SkillCheck{};
+        changed = true;
+    }
+    if (changed) {
         save();
     }
 }

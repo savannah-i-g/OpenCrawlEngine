@@ -145,6 +145,21 @@ void GamePanels::draw(oce::Engine& engine) {
         ImGui::End();
     }
 
+    // Skill check.
+    if (s.skill_check.active) {
+        if (ImGui::Begin("Skill Check")) {
+            ImGui::TextWrapped("%s", s.skill_check.description.empty()
+                                         ? "A test of skill."
+                                         : s.skill_check.description.c_str());
+            ImGui::Text("%s vs difficulty %d  (%dd6)", s.skill_check.attribute.c_str(),
+                        s.skill_check.difficulty, s.skill_check.num_dice);
+            if (ImGui::Button("Roll")) {
+                engine.resolve_skill_check();
+            }
+        }
+        ImGui::End();
+    }
+
     // Settings.
     if (show_settings_) {
         if (ImGui::Begin("Settings", &show_settings_)) {

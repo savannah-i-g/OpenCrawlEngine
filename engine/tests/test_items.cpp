@@ -43,6 +43,20 @@ int main(void) {
     cleric.energy = 15;
     CHECK(can_cast_spell(cleric).allowed);
 
+    // Attribute lookup + dice-driven skill check.
+    Attributes at;
+    at.dexterity = 16;
+    CHECK(attribute_value(at, "dexterity") == 16);
+    CHECK(attribute_value(at, "strength") == 5);
+    CHECK(attribute_value(at, "unknown") == 10);
+    Rng skrng(11u);
+    for (int i = 0; i < 100; ++i) {
+        SkillCheckResult sr = roll_skill_check(skrng, 2, 3, 10);
+        CHECK(sr.total >= 5 && sr.total <= 15); // 2d6 + 3
+        CHECK(sr.success == (sr.total >= 10));
+        CHECK(sr.margin == sr.total - 10);
+    }
+
     // Rarity bonuses and item generation.
     CHECK(weapon_armor_rarity_bonus(ItemRarity::Common) == 1);
     CHECK(weapon_armor_rarity_bonus(ItemRarity::Legendary) == 5);
