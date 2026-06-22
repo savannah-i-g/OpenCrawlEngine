@@ -197,6 +197,33 @@ void dice_roll_indicator(const char* prefix) {
     ImGui::TextDisabled("%s rolling… [%d]", prefix, face);
 }
 
+// A rounded stat bar with a horizontal dark→bright gradient fill and a centered
+// value overlay. Advances the cursor like a widget of the given size.
+void gradient_bar(float w, float h, float frac, const ImVec4& col, const char* overlay) {
+    frac = frac < 0.0f ? 0.0f : (frac > 1.0f ? 1.0f : frac);
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    const ImVec2 p = ImGui::GetCursorScreenPos();
+    const ImVec2 end(p.x + w, p.y + h);
+    const float rounding = h * 0.45f;
+    dl->AddRectFilled(p, end, ImGui::GetColorU32(ImVec4(0.03f, 0.03f, 0.03f, 0.85f)), rounding);
+    if (frac > 0.001f) {
+        const ImVec2 fend(p.x + w * frac, end.y);
+        const ImU32 dark =
+            ImGui::GetColorU32(ImVec4(col.x * 0.45f, col.y * 0.45f, col.z * 0.45f, 1.0f));
+        const ImU32 bright = ImGui::GetColorU32(col);
+        dl->AddRectFilledMultiColor(p, fend, dark, bright, bright, dark);
+    }
+    dl->AddRect(p, end, ImGui::GetColorU32(ImVec4(0.0f, 0.0f, 0.0f, 0.45f)), rounding);
+    if (overlay != nullptr && overlay[0] != '\0') {
+        const ImVec2 ts = ImGui::CalcTextSize(overlay);
+        const ImVec2 tp(p.x + (w - ts.x) * 0.5f, p.y + (h - ts.y) * 0.5f);
+        dl->AddText(ImVec2(tp.x + 1.0f, tp.y + 1.0f), ImGui::GetColorU32(ImVec4(0, 0, 0, 0.55f)),
+                    overlay);
+        dl->AddText(tp, ImGui::GetColorU32(ImVec4(0.96f, 0.94f, 0.88f, 1.0f)), overlay);
+    }
+    ImGui::Dummy(ImVec2(w, h));
+}
+
 void heading(const char* text) {
     if (g_heading_font != nullptr) {
         ImGui::PushFont(g_heading_font);
@@ -437,44 +464,36 @@ void GamePanels::build_layout(oce::Engine& engine, const oce::Snapshot& s) {
     }
 
     // --- top stat-bar ---
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(14, 8));
-    if (ImGui::BeginChild("##statbar", ImVec2(0, 66), ImGuiChildFlags_None)) {
-        icons_.draw(class_icon(s.player.cls), 40.0f, accent_for(s.theme));
-        ImGui::SameLine();
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(16, 10));
+    if (ImGui::BeginChild("##statbar", ImVec2(0, 78), ImGuiChildFlags_None)) {
+        icons_.draw(class_icon(s.player.cls), 44.0f, accent_for(s.theme));
+        ImGui::SameLine(0.0f, 12.0f);
         ImGui::BeginGroup();
         heading(s.player.name.c_str());
         ImGui::TextDisabled("Level %d %s", s.player.level, class_to_string(s.player.cls));
         ImGui::EndGroup();
 
-        ImGui::SameLine(0.0f, 24.0f);
-        const float bars_x = ImGui::GetCursorPosX();
-        const float bar_w = (ImGui::GetContentRegionAvail().x - 24.0f) / 3.0f;
+        ImGui::SameLine(0.0f, 32.0f);
+        const float gap = 18.0f;
+        const float slot_w = (ImGui::GetContentRegionAvail().x - 2.0f * gap) / 3.0f;
         const long long xp_next = oce::xp_for_next_level(s.player.level);
-        auto bar = [&](const char* icon, const char* label, float frac, const ImVec4& col,
-                       const std::string& overlay) {
+        auto slot = [&](const char* icon, const char* label, long long cur, long long maxv,
+                        const ImVec4& col) {
             ImGui::BeginGroup();
-            icons_.draw(icon, 16.0f, col);
-            ImGui::SameLine(0.0f, 4.0f);
+            icons_.draw(icon, 15.0f, col);
+            ImGui::SameLine(0.0f, 5.0f);
             ImGui::TextColored(col, "%s", label);
-            ImGui::PushStyleColor(ImGuiCol_PlotHistogram, col);
-            ImGui::ProgressBar(frac, ImVec2(bar_w, 14.0f), overlay.c_str());
-            ImGui::PopStyleColor();
+            const std::string overlay = std::to_string(cur) + " / " + std::to_string(maxv);
+            const float frac = maxv > 0 ? (float) cur / (float) maxv : 0.0f;
+            gradient_bar(slot_w, 18.0f, frac, col, overlay.c_str());
             ImGui::EndGroup();
         };
-        ImGui::SetCursorPosX(bars_x);
-        bar("health-normal", "HP",
-            s.player.max_hp > 0 ? (float) s.player.hp / (float) s.player.max_hp : 0.0f,
-            ImVec4(0.78f, 0.28f, 0.28f, 1.0f),
-            std::to_string(s.player.hp) + "/" + std::to_string(s.player.max_hp));
-        ImGui::SameLine();
-        bar("lightning-arc", "Energy",
-            s.player.max_energy > 0 ? (float) s.player.energy / (float) s.player.max_energy : 0.0f,
-            ImVec4(0.30f, 0.52f, 0.85f, 1.0f),
-            std::to_string(s.player.energy) + "/" + std::to_string(s.player.max_energy));
-        ImGui::SameLine();
-        bar("laurel-crown", "XP", xp_next > 0 ? (float) s.player.xp / (float) xp_next : 0.0f,
-            accent_for(s.theme),
-            std::to_string(s.player.xp) + "/" + std::to_string(xp_next));
+        slot("health-normal", "HP", s.player.hp, s.player.max_hp, ImVec4(0.82f, 0.27f, 0.27f, 1.0f));
+        ImGui::SameLine(0.0f, gap);
+        slot("lightning-arc", "Energy", s.player.energy, s.player.max_energy,
+             ImVec4(0.28f, 0.55f, 0.88f, 1.0f));
+        ImGui::SameLine(0.0f, gap);
+        slot("laurel-crown", "XP", s.player.xp, xp_next, accent_for(s.theme));
     }
     ImGui::EndChild();
     ImGui::PopStyleVar();

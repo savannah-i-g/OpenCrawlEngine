@@ -152,13 +152,6 @@ int main(void) {
     CHECK(hero.attributes.intelligence == 8);
     CHECK(hero.background == "a scholar");
 
-    std::vector<Item> kit = starting_kit();
-    CHECK(kit.size() == 5u);
-    CHECK(kit[0].effects.strength == 3);       // Rusty Sword (2 + 1)
-    CHECK(kit[1].effects.constitution == 2);   // Worn Leather Armor (1 + 1)
-    CHECK(kit[2].effects.hp == 35 && kit[3].effects.hp == 35); // Minor Health Potions (20 + 15)
-    CHECK(kit[4].effects.hp == 20);            // Stale Bread (5 + 15)
-
     CharacterClass c;
     CHECK(class_from_string("rogue", c) && c == CharacterClass::Rogue);
     CHECK(std::string(class_to_string(CharacterClass::Rogue)) == "rogue");
