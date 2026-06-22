@@ -6,7 +6,7 @@ set -euo pipefail
 project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 project_name="$(basename "$project_root")"
 parent_dir="$(dirname "$project_root")"
-backup_dir="${HOME}/Documents/${project_name}_Backups"
+backup_dir="${HOME}/Documents/OpenCrawl_Backups"
 stamp="$(date +%Y%m%d_%H%M%S)"
 archive="${backup_dir}/${project_name}_${stamp}.tar.gz"
 

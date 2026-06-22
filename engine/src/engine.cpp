@@ -1,5 +1,8 @@
 #include "oce/engine.hpp"
 
+#include "oce/rules/character.hpp"
+#include "oce/rules/leveling.hpp"
+
 #include "oce_json.h"
 #include "oce_llm.h"
 #include "oce_secrets.h"
@@ -26,9 +29,30 @@ std::string serialize_state(const GameState& s) {
     oce_json* root = oce_json_new_object();
     oce_json* p = oce_json_new_object();
     oce_json_obj_set_str(p, "name", s.player.name.c_str());
+    oce_json_obj_set_str(p, "class", class_to_string(s.player.cls));
+    oce_json_obj_set_int(p, "level", s.player.level);
+    oce_json_obj_set_int(p, "xp", s.player.xp);
+    oce_json_obj_set_int(p, "gold", s.player.gold);
     oce_json_obj_set_int(p, "hp", s.player.hp);
     oce_json_obj_set_int(p, "max_hp", s.player.max_hp);
-    oce_json_obj_set_int(p, "gold", s.player.gold);
+    oce_json_obj_set_int(p, "energy", s.player.energy);
+    oce_json_obj_set_int(p, "max_energy", s.player.max_energy);
+    oce_json_obj_set_int(p, "attribute_points", s.player.attribute_points);
+    if (!s.player.background.empty()) {
+        oce_json_obj_set_str(p, "background", s.player.background.c_str());
+    }
+    oce_json* attrs = oce_json_new_object();
+    oce_json_obj_set_int(attrs, "strength", s.player.attributes.strength);
+    oce_json_obj_set_int(attrs, "dexterity", s.player.attributes.dexterity);
+    oce_json_obj_set_int(attrs, "intelligence", s.player.attributes.intelligence);
+    oce_json_obj_set_int(attrs, "constitution", s.player.attributes.constitution);
+    oce_json_obj_set_int(attrs, "wisdom", s.player.attributes.wisdom);
+    oce_json_obj_set_int(attrs, "charisma", s.player.attributes.charisma);
+    oce_json_obj_set_int(attrs, "luck", s.player.attributes.luck);
+    oce_json_obj_set_int(attrs, "perception", s.player.attributes.perception);
+    oce_json_obj_set_int(attrs, "stealth", s.player.attributes.stealth);
+    oce_json_obj_set_int(attrs, "bartering", s.player.attributes.bartering);
+    oce_json_obj_set(p, "attributes", attrs);
     oce_json_obj_set(root, "player", p);
 
     oce_json* story = oce_json_new_array();
@@ -61,9 +85,34 @@ void deserialize_state(const char* json, GameState& out) {
     const oce_json* p = oce_json_get(root, "player");
     if (oce_json_is_object(p)) {
         out.player.name = oce_json_get_str(p, "name", "Adventurer");
+        CharacterClass cls;
+        if (class_from_string(oce_json_get_str(p, "class", "warrior"), cls)) {
+            out.player.cls = cls;
+        }
+        out.player.level = (int) oce_json_get_int(p, "level", out.player.level);
+        out.player.xp = oce_json_get_int(p, "xp", out.player.xp);
+        out.player.gold = (int) oce_json_get_int(p, "gold", out.player.gold);
         out.player.hp = (int) oce_json_get_int(p, "hp", out.player.hp);
         out.player.max_hp = (int) oce_json_get_int(p, "max_hp", out.player.max_hp);
-        out.player.gold = (int) oce_json_get_int(p, "gold", out.player.gold);
+        out.player.energy = (int) oce_json_get_int(p, "energy", out.player.energy);
+        out.player.max_energy = (int) oce_json_get_int(p, "max_energy", out.player.max_energy);
+        out.player.attribute_points =
+            (int) oce_json_get_int(p, "attribute_points", out.player.attribute_points);
+        out.player.background = oce_json_get_str(p, "background", "");
+        const oce_json* attrs = oce_json_get(p, "attributes");
+        if (oce_json_is_object(attrs)) {
+            Attributes& at = out.player.attributes;
+            at.strength = (int) oce_json_get_int(attrs, "strength", at.strength);
+            at.dexterity = (int) oce_json_get_int(attrs, "dexterity", at.dexterity);
+            at.intelligence = (int) oce_json_get_int(attrs, "intelligence", at.intelligence);
+            at.constitution = (int) oce_json_get_int(attrs, "constitution", at.constitution);
+            at.wisdom = (int) oce_json_get_int(attrs, "wisdom", at.wisdom);
+            at.charisma = (int) oce_json_get_int(attrs, "charisma", at.charisma);
+            at.luck = (int) oce_json_get_int(attrs, "luck", at.luck);
+            at.perception = (int) oce_json_get_int(attrs, "perception", at.perception);
+            at.stealth = (int) oce_json_get_int(attrs, "stealth", at.stealth);
+            at.bartering = (int) oce_json_get_int(attrs, "bartering", at.bartering);
+        }
     }
     const oce_json* story = oce_json_get(root, "story");
     if (oce_json_is_array(story)) {
@@ -214,24 +263,44 @@ bool Engine::save() {
 
 std::string Engine::tool_apply_stats(const char* args_json) {
     oce_json* a = oce_json_parse(args_json, std::strlen(args_json));
-    long long hp = oce_json_get_int(a, "hp", 0);
-    long long gold = oce_json_get_int(a, "gold", 0);
+    const int hp = (int) oce_json_get_int(a, "hp", 0);
+    const int gold = (int) oce_json_get_int(a, "gold", 0);
+    const int energy = (int) oce_json_get_int(a, "energy", 0);
+    const long long xp = oce_json_get_int(a, "xp", 0);
     oce_json_free(a);
 
     int new_hp;
     int new_gold;
+    int new_energy;
+    int new_level;
+    int levels_gained = 0;
     {
         std::lock_guard<std::mutex> sl(state_mutex_);
-        new_hp = clampi(state_.player.hp + (int) hp, 0, state_.player.max_hp);
-        new_gold = state_.player.gold + (int) gold;
-        if (new_gold < 0) {
-            new_gold = 0;
+        Player& pl = state_.player;
+        pl.hp = clampi(pl.hp + hp, 0, pl.max_hp);
+        pl.gold = pl.gold + gold;
+        if (pl.gold < 0) {
+            pl.gold = 0;
         }
-        state_.player.hp = new_hp;
-        state_.player.gold = new_gold;
+        pl.energy = clampi(pl.energy + energy, 0, pl.max_energy);
+        if (xp > 0) {
+            pl.xp += xp;
+            levels_gained = apply_level_up(pl);
+        }
+        new_hp = pl.hp;
+        new_gold = pl.gold;
+        new_energy = pl.energy;
+        new_level = pl.level;
     }
-    return "{\"ok\":true,\"hp\":" + std::to_string(new_hp) + ",\"gold\":" + std::to_string(new_gold) +
-           "}";
+    std::string r = "{\"ok\":true,\"hp\":" + std::to_string(new_hp) +
+                    ",\"gold\":" + std::to_string(new_gold) +
+                    ",\"energy\":" + std::to_string(new_energy) +
+                    ",\"level\":" + std::to_string(new_level);
+    if (levels_gained > 0) {
+        r += ",\"leveled_up\":" + std::to_string(levels_gained);
+    }
+    r += "}";
+    return r;
 }
 
 std::string Engine::tool_set_suggested(const char* args_json) {
@@ -264,19 +333,22 @@ std::string Engine::system_prompt() const {
     return "You are the game master of a text role-playing game. Narrate the world and the "
            "outcomes of the player's actions in vivid second-person prose, a few sentences at a "
            "time.\n\n"
-           "When an action changes the player's health or gold, call apply_stat_changes with the "
-           "signed deltas. After narrating, call set_suggested_actions with two to four short "
-           "actions the player might take next. Do not state the player's hit points or gold as "
-           "numbers in the prose; the interface displays them.";
+           "When an action changes the player's health, energy, gold, or experience, call "
+           "apply_stat_changes with the signed deltas (positive experience may trigger a "
+           "level-up). After narrating, call set_suggested_actions with two to four short actions "
+           "the player might take next. Do not state the player's numeric stats in the prose; the "
+           "interface displays them.";
 }
 
 void Engine::register_tools() {
     static const char* apply_spec =
         "{\"type\":\"function\",\"function\":{\"name\":\"apply_stat_changes\","
-        "\"description\":\"Apply signed deltas to the player's hp and gold.\","
+        "\"description\":\"Apply signed deltas to the player's hp, energy, gold, and xp.\","
         "\"parameters\":{\"type\":\"object\",\"properties\":{"
         "\"hp\":{\"type\":\"integer\",\"description\":\"change to hit points\"},"
-        "\"gold\":{\"type\":\"integer\",\"description\":\"change to gold\"}}}}}";
+        "\"energy\":{\"type\":\"integer\",\"description\":\"change to energy\"},"
+        "\"gold\":{\"type\":\"integer\",\"description\":\"change to gold\"},"
+        "\"xp\":{\"type\":\"integer\",\"description\":\"experience gained (positive)\"}}}}}";
     static const char* suggest_spec =
         "{\"type\":\"function\",\"function\":{\"name\":\"set_suggested_actions\","
         "\"description\":\"Offer two to four short suggested next actions.\","

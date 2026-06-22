@@ -1,6 +1,7 @@
 #include "oce_ui/game_panels.hpp"
 
 #include "oce/engine.hpp"
+#include "oce/rules/character.hpp"
 
 #include "imgui.h"
 
@@ -28,12 +29,23 @@ void GamePanels::draw(oce::Engine& engine) {
 
     // Character status.
     if (ImGui::Begin("Character")) {
-        ImGui::TextUnformatted(s.player.name.c_str());
-        float hp_frac =
+        ImGui::Text("%s", s.player.name.c_str());
+        ImGui::TextDisabled("Level %d %s", s.player.level, class_to_string(s.player.cls));
+        ImGui::Spacing();
+
+        const float hp_frac =
             s.player.max_hp > 0 ? (float) s.player.hp / (float) s.player.max_hp : 0.0f;
         ImGui::ProgressBar(hp_frac, ImVec2(-1.0f, 0.0f));
         ImGui::Text("HP %d / %d", s.player.hp, s.player.max_hp);
+
+        const float energy_frac =
+            s.player.max_energy > 0 ? (float) s.player.energy / (float) s.player.max_energy : 0.0f;
+        ImGui::ProgressBar(energy_frac, ImVec2(-1.0f, 0.0f));
+        ImGui::Text("Energy %d / %d", s.player.energy, s.player.max_energy);
+
+        ImGui::Spacing();
         ImGui::Text("Gold: %d", s.player.gold);
+        ImGui::TextDisabled("XP: %lld", s.player.xp);
         if (s.total_tokens > 0) {
             ImGui::TextDisabled("Tokens used: %lld", s.total_tokens);
         }
