@@ -55,3 +55,8 @@ follows [Semantic Versioning](https://semver.org/).
   properties, mounts, factions, NPCs, world facts, combat, and skill checks)
   serializes to and from the save (round-trip tested). An Assets dialog lists
   holdings, factions, and known NPCs.
+- Multiple saved games: each New Game is its own campaign; a Load Game dialog
+  lists saves and switches between them; the active campaign is remembered and
+  resumes on restart, re-seeding recent story into a fresh game-master
+  conversation so context carries over. The save format carries a version field
+  for future migration.

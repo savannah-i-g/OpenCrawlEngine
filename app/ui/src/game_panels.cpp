@@ -26,6 +26,10 @@ void GamePanels::draw(oce::Engine& engine) {
             if (ImGui::MenuItem("New Game...")) {
                 show_new_game_ = true;
             }
+            if (ImGui::MenuItem("Load Game...")) {
+                show_load_ = true;
+                saves_ = engine.list_saves();
+            }
             if (ImGui::MenuItem("Assets...")) {
                 show_assets_ = true;
             }
@@ -233,6 +237,30 @@ void GamePanels::draw(oce::Engine& engine) {
                     const oce::NPC& n = kv.second;
                     ImGui::BulletText("%s — %s", n.name.c_str(), n.location.c_str());
                 }
+            }
+        }
+        ImGui::End();
+    }
+
+    // Load game.
+    if (show_load_) {
+        if (ImGui::Begin("Load Game", &show_load_)) {
+            if (ImGui::Button("Refresh")) {
+                saves_ = engine.list_saves();
+            }
+            ImGui::Separator();
+            if (saves_.empty()) {
+                ImGui::TextDisabled("No saved games yet.");
+            }
+            for (size_t i = 0; i < saves_.size(); ++i) {
+                ImGui::PushID((int) i);
+                if (ImGui::Button("Load")) {
+                    engine.load_save(saves_[i].id);
+                    show_load_ = false;
+                }
+                ImGui::SameLine();
+                ImGui::TextUnformatted(saves_[i].label.c_str());
+                ImGui::PopID();
             }
         }
         ImGui::End();
