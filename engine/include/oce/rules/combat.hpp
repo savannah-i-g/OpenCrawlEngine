@@ -6,6 +6,7 @@
 #include "oce/rules/dice.hpp"
 
 #include <string>
+#include <vector>
 
 namespace oce {
 
@@ -70,9 +71,25 @@ struct CombatTurnResult {
     int levels_gained = 0;
 };
 
-// Resolves the player's action and the ensuing enemy turns: mutates s.player and
-// s.combat, awards xp/gold (with leveling) as enemies fall, ends combat on
-// victory/defeat/successful flee, and appends readable lines to s.combat.log.
+// What an enemy does on its turn. Attack strikes the player; Defend forgoes the
+// attack to brace and recover a little health.
+enum class EnemyAction { Attack, Defend };
+bool enemy_action_from_string(const std::string& s, EnemyAction& out);
+
+// Resolves only the player's action (attack/defend/flee): mutates s.player and
+// s.combat, awards xp/gold (with leveling) if the target falls, and ends combat
+// on a successful flee or when the last enemy dies. A Defend stores a defensive
+// bonus in s.combat.player_guard for the following enemy phase.
+CombatTurnResult resolve_player_action(GameState& s, Rng& rng, CombatAction action,
+                                       int target_index);
+
+// Resolves the enemy phase: each living enemy acts per actions[i] (Attack if the
+// vector is shorter), consuming s.combat.player_guard, and ends combat on defeat.
+CombatTurnResult resolve_enemy_phase(GameState& s, Rng& rng,
+                                     const std::vector<EnemyAction>& actions);
+
+// The player's action followed by an all-Attack enemy phase. Equivalent to
+// resolve_player_action then resolve_enemy_phase with default actions.
 CombatTurnResult resolve_combat_turn(GameState& s, Rng& rng, CombatAction action, int target_index);
 
 } // namespace oce

@@ -19,6 +19,10 @@ SkillCheckResult perform_skill_check(int roll_total, int modifier_value, int dif
 // Rolls num_dice d6, then resolves.
 SkillCheckResult roll_skill_check(Rng& rng, int num_dice, int modifier_value, int difficulty);
 
+// Outcome tier from the margin: a margin of ±5 marks a critical result.
+enum class CheckTier { CriticalFailure, Failure, Success, CriticalSuccess };
+CheckTier check_tier(const SkillCheckResult& result);
+
 struct SpellGate {
     bool allowed = false;
     std::string reason; // empty when allowed

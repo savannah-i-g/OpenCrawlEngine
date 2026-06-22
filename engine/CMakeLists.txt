@@ -60,4 +60,8 @@ if(OCE_BUILD_TESTS)
     add_executable(test_worldgen tests/test_worldgen.cpp)
     target_link_libraries(test_worldgen PRIVATE oce_engine oce_warnings)
     add_test(NAME worldgen COMMAND test_worldgen)
+
+    add_executable(test_combat_depth tests/test_combat_depth.cpp)
+    target_link_libraries(test_combat_depth PRIVATE oce_engine oce_warnings)
+    add_test(NAME combat_depth COMMAND test_combat_depth)
 endif()

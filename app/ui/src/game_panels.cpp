@@ -122,6 +122,13 @@ std::string effects_summary(const oce::ItemEffects& e) {
     return out;
 }
 
+// A lightweight rolling-die indicator shown while the engine resolves dice.
+void dice_roll_indicator(const char* prefix) {
+    const long ticks = static_cast<long>(ImGui::GetTime() * 10.0);
+    const int face = static_cast<int>(((ticks % 6) + 6) % 6) + 1;
+    ImGui::TextDisabled("%s rolling… [%d]", prefix, face);
+}
+
 } // namespace
 
 GamePanels::GamePanels() {
@@ -315,18 +322,32 @@ void GamePanels::draw(oce::Engine& engine) {
             ImGui::TextDisabled("%s", s.status.c_str());
         }
 
-        ImGui::BeginDisabled(s.turn_in_progress);
-        for (size_t i = 0; i < s.suggested_actions.size(); ++i) {
-            if (i > 0) {
-                ImGui::SameLine();
+        // Context-sensitive suggested actions as a wrapped row of small buttons.
+        if (!s.suggested_actions.empty()) {
+            ImGui::TextDisabled("Suggested:");
+            const ImGuiStyle& style = ImGui::GetStyle();
+            const float avail = ImGui::GetContentRegionAvail().x;
+            float used = 0.0f;
+            ImGui::BeginDisabled(s.turn_in_progress);
+            for (size_t i = 0; i < s.suggested_actions.size(); ++i) {
+                const std::string& action = s.suggested_actions[i];
+                const float w = ImGui::CalcTextSize(action.c_str()).x + style.FramePadding.x * 2.0f;
+                if (i > 0 && used + style.ItemSpacing.x + w <= avail) {
+                    ImGui::SameLine();
+                    used += style.ItemSpacing.x + w;
+                } else {
+                    used = w;
+                }
+                ImGui::PushID((int) i);
+                if (ImGui::SmallButton(action.c_str())) {
+                    engine.submit_turn(action);
+                }
+                ImGui::PopID();
             }
-            ImGui::PushID((int) i);
-            if (ImGui::Button(s.suggested_actions[i].c_str())) {
-                engine.submit_turn(s.suggested_actions[i]);
-            }
-            ImGui::PopID();
+            ImGui::EndDisabled();
         }
 
+        ImGui::BeginDisabled(s.turn_in_progress);
         bool enter = ImGui::InputText("##input", input_, sizeof input_,
                                       ImGuiInputTextFlags_EnterReturnsTrue);
         ImGui::SameLine();
@@ -349,12 +370,27 @@ void GamePanels::draw(oce::Engine& engine) {
     // Combat.
     if (s.combat.active) {
         if (ImGui::Begin("Combat")) {
+            const oce::Item* weapon =
+                s.equipment.hand.has_value() ? &s.equipment.hand.value() : nullptr;
+            const oce::Item* armor =
+                s.equipment.body.has_value() ? &s.equipment.body.value() : nullptr;
+            ImGui::Text("Attack +%d    Defense %d", oce::player_attack_bonus(s.player, weapon),
+                        oce::player_defense(s.player, armor));
+            ImGui::Text("HP %d/%d", s.player.hp, s.player.max_hp);
+            if (s.turn_in_progress) {
+                dice_roll_indicator("Enemies act —");
+            } else {
+                ImGui::TextDisabled("Your move.");
+            }
+            ImGui::Separator();
+
+            ImGui::BeginDisabled(s.turn_in_progress);
             for (size_t i = 0; i < s.combat.enemies.size(); ++i) {
                 const oce::Enemy& e = s.combat.enemies[i];
                 ImGui::Text("%s  HP %d/%d", e.name.c_str(), e.hp, e.max_hp);
                 ImGui::SameLine();
                 ImGui::PushID((int) i);
-                if (ImGui::Button("Attack")) {
+                if (ImGui::SmallButton("Attack")) {
                     engine.combat_action("attack", (int) i);
                 }
                 ImGui::PopID();
@@ -367,6 +403,19 @@ void GamePanels::draw(oce::Engine& engine) {
             if (ImGui::Button("Flee")) {
                 engine.combat_action("flee", 0);
             }
+            // Use a potion as this turn's action.
+            for (const oce::Item& it : s.inventory) {
+                if (it.kind != oce::ItemKind::Potion) {
+                    continue;
+                }
+                ImGui::PushID(it.id.c_str());
+                if (ImGui::SmallButton(("Use " + it.name).c_str())) {
+                    engine.combat_use_item(it.id);
+                }
+                ImGui::PopID();
+            }
+            ImGui::EndDisabled();
+
             ImGui::Separator();
             if (ImGui::BeginChild("combat_log", ImVec2(0.0f, 160.0f), ImGuiChildFlags_Borders)) {
                 for (const std::string& line : s.combat.log) {
@@ -389,8 +438,14 @@ void GamePanels::draw(oce::Engine& engine) {
                                          : s.skill_check.description.c_str());
             ImGui::Text("%s vs difficulty %d  (%dd6)", s.skill_check.attribute.c_str(),
                         s.skill_check.difficulty, s.skill_check.num_dice);
+            ImGui::BeginDisabled(s.turn_in_progress);
             if (ImGui::Button("Roll")) {
                 engine.resolve_skill_check();
+            }
+            ImGui::EndDisabled();
+            if (s.turn_in_progress) {
+                ImGui::SameLine();
+                dice_roll_indicator("");
             }
         }
         ImGui::End();

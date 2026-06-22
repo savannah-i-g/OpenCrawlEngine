@@ -111,7 +111,19 @@ int gold_reward(Rng& rng, int player_luck) {
     return std::max(1, base + luck_bonus);
 }
 
-CombatTurnResult resolve_combat_turn(GameState& s, Rng& rng, CombatAction action, int target_index) {
+bool enemy_action_from_string(const std::string& s, EnemyAction& out) {
+    if (s == "attack") {
+        out = EnemyAction::Attack;
+    } else if (s == "defend") {
+        out = EnemyAction::Defend;
+    } else {
+        return false;
+    }
+    return true;
+}
+
+CombatTurnResult resolve_player_action(GameState& s, Rng& rng, CombatAction action,
+                                       int target_index) {
     CombatTurnResult result;
     CombatState& c = s.combat;
     if (!c.active) {
@@ -120,8 +132,7 @@ CombatTurnResult resolve_combat_turn(GameState& s, Rng& rng, CombatAction action
     }
 
     const Item* weapon = s.equipment.hand.has_value() ? &s.equipment.hand.value() : nullptr;
-    const Item* armor = s.equipment.body.has_value() ? &s.equipment.body.value() : nullptr;
-    int extra_defense = 0;
+    c.player_guard = 0;
 
     if (action == CombatAction::Flee) {
         if (flee_check(rng, s.player)) {
@@ -135,7 +146,7 @@ CombatTurnResult resolve_combat_turn(GameState& s, Rng& rng, CombatAction action
         }
         c.log.push_back("You fail to escape.");
     } else if (action == CombatAction::Defend) {
-        extra_defense = defend_bonus(s.player);
+        c.player_guard = defend_bonus(s.player);
         c.log.push_back("You take a defensive stance.");
     } else if (action == CombatAction::Attack && !c.enemies.empty()) {
         if (target_index < 0 || target_index >= (int) c.enemies.size()) {
@@ -174,10 +185,38 @@ CombatTurnResult resolve_combat_turn(GameState& s, Rng& rng, CombatAction action
         c.turn = "player";
         result.combat_ended = true;
         result.outcome = CombatOutcomeType::Victory;
+    }
+    return result;
+}
+
+CombatTurnResult resolve_enemy_phase(GameState& s, Rng& rng,
+                                     const std::vector<EnemyAction>& actions) {
+    CombatTurnResult result;
+    CombatState& c = s.combat;
+    if (!c.active || c.enemies.empty()) {
         return result;
     }
 
-    for (Enemy& e : c.enemies) {
+    const Item* armor = s.equipment.body.has_value() ? &s.equipment.body.value() : nullptr;
+    const int extra_defense = c.player_guard;
+    c.player_guard = 0;
+
+    for (size_t i = 0; i < c.enemies.size(); ++i) {
+        Enemy& e = c.enemies[i];
+        const EnemyAction act = (i < actions.size()) ? actions[i] : EnemyAction::Attack;
+        if (act == EnemyAction::Defend) {
+            const int heal = std::max(1, e.max_hp / 10);
+            const int before = e.hp;
+            e.hp = std::min(e.max_hp, e.hp + heal);
+            const int gained = e.hp - before;
+            if (gained > 0) {
+                c.log.push_back(e.name + " braces and recovers " + std::to_string(gained) +
+                                " health.");
+            } else {
+                c.log.push_back(e.name + " holds back defensively.");
+            }
+            continue;
+        }
         const AttackResult er = enemy_attack(rng, e, s.player, armor, extra_defense);
         if (!er.hit) {
             c.log.push_back(e.name + " misses you.");
@@ -194,6 +233,19 @@ CombatTurnResult resolve_combat_turn(GameState& s, Rng& rng, CombatAction action
             result.outcome = CombatOutcomeType::Defeat;
             return result;
         }
+    }
+    return result;
+}
+
+CombatTurnResult resolve_combat_turn(GameState& s, Rng& rng, CombatAction action, int target_index) {
+    CombatTurnResult result = resolve_player_action(s, rng, action, target_index);
+    if (result.combat_ended) {
+        return result;
+    }
+    const CombatTurnResult enemy = resolve_enemy_phase(s, rng, {});
+    if (enemy.combat_ended) {
+        result.combat_ended = true;
+        result.outcome = enemy.outcome;
     }
     return result;
 }

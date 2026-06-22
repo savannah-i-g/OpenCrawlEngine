@@ -3,6 +3,7 @@
 #include "oce/rules/combat.hpp"
 #include "oce/rules/items.hpp"
 #include "oce/rules/leveling.hpp"
+#include "oce/rules/skills.hpp"
 #include "oce/rules/world.hpp"
 
 #include "oce_json.h"
@@ -207,7 +208,10 @@ std::string start_combat(GameState& s, const oce_json* args, Rng& rng) {
     s.combat.enemies.clear();
     for (size_t i = 0; i < n; ++i) {
         const oce_json* e = oce_json_arr_at(arr, i);
-        const int level = std::clamp((int) oce_json_get_int(e, "level", 1), 1, 100);
+        // Difficulty nudges enemy levels (easy −1 … deadly +2).
+        const int level = std::clamp((int) oce_json_get_int(e, "level", 1) +
+                                         difficulty_level_offset(s.meta.difficulty),
+                                     1, 100);
         s.combat.enemies.push_back(make_enemy(rng, level, "enemy-" + std::to_string(i),
                                               oce_json_get_str(e, "name", "Enemy"),
                                               oce_json_get_str(e, "description", "")));
