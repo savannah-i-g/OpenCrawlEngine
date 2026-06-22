@@ -78,7 +78,6 @@ private:
 
     int combat_target_ = 0;
     bool show_skill_ = false;
-    bool prev_skill_active_ = false;
     long long skill_base_seq_ = 0;
 
     // Game Master tools forms.
