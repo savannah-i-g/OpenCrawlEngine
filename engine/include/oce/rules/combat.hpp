@@ -47,7 +47,9 @@ AttackResult resolve_attack(int attack_total, int target_defense, int damage_die
 // Rolls 2d6 + bonus to hit and 1d6 + str mod for damage, applying it to target.
 AttackResult player_attack(Rng& rng, const Player& player, Enemy& target, const Item* weapon);
 // Rolls the enemy's attack; the caller applies result.damage to the player.
-AttackResult enemy_attack(Rng& rng, const Enemy& enemy, const Player& player, const Item* armor);
+// extra_defense adds to the player's defense for this attack (e.g. while defending).
+AttackResult enemy_attack(Rng& rng, const Enemy& enemy, const Player& player, const Item* armor,
+                          int extra_defense = 0);
 
 // Flee succeeds when 2d6 + dex mod + luck mod >= 10.
 bool resolve_flee(int flee_total); // flee_total already includes the modifiers
@@ -56,5 +58,21 @@ bool flee_check(Rng& rng, const Player& player);
 // Rewards for defeating an enemy.
 long long xp_reward(const Enemy& enemy);    // max(10, floor((maxHp + atk + def)/3))
 int       gold_reward(Rng& rng, int player_luck); // (5..14) + floor(luck mod / 2), min 1
+
+// One player combat action, resolved against the live combat state.
+enum class CombatAction { Attack, Defend, Flee };
+
+struct CombatTurnResult {
+    bool combat_ended = false;
+    CombatOutcomeType outcome = CombatOutcomeType::Victory; // valid when combat_ended
+    long long xp_awarded = 0;
+    int gold_awarded = 0;
+    int levels_gained = 0;
+};
+
+// Resolves the player's action and the ensuing enemy turns: mutates s.player and
+// s.combat, awards xp/gold (with leveling) as enemies fall, ends combat on
+// victory/defeat/successful flee, and appends readable lines to s.combat.log.
+CombatTurnResult resolve_combat_turn(GameState& s, Rng& rng, CombatAction action, int target_index);
 
 } // namespace oce

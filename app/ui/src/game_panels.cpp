@@ -110,6 +110,41 @@ void GamePanels::draw(oce::Engine& engine) {
     }
     ImGui::End();
 
+    // Combat.
+    if (s.combat.active) {
+        if (ImGui::Begin("Combat")) {
+            for (size_t i = 0; i < s.combat.enemies.size(); ++i) {
+                const oce::Enemy& e = s.combat.enemies[i];
+                ImGui::Text("%s  HP %d/%d", e.name.c_str(), e.hp, e.max_hp);
+                ImGui::SameLine();
+                ImGui::PushID((int) i);
+                if (ImGui::Button("Attack")) {
+                    engine.combat_action("attack", (int) i);
+                }
+                ImGui::PopID();
+            }
+            ImGui::Spacing();
+            if (ImGui::Button("Defend")) {
+                engine.combat_action("defend", 0);
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Flee")) {
+                engine.combat_action("flee", 0);
+            }
+            ImGui::Separator();
+            if (ImGui::BeginChild("combat_log", ImVec2(0.0f, 160.0f), ImGuiChildFlags_Borders)) {
+                for (const std::string& line : s.combat.log) {
+                    ImGui::TextWrapped("%s", line.c_str());
+                }
+                if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY()) {
+                    ImGui::SetScrollHereY(1.0f);
+                }
+            }
+            ImGui::EndChild();
+        }
+        ImGui::End();
+    }
+
     // Settings.
     if (show_settings_) {
         if (ImGui::Begin("Settings", &show_settings_)) {

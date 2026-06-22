@@ -10,8 +10,12 @@ namespace oce {
 
 struct Snapshot {
     Player player;
+    std::vector<Item> inventory;
+    Equipment equipment;
     std::vector<Message> story;
     std::vector<std::string> suggested_actions;
+    CombatState combat;
+    SkillCheck skill_check;
     std::string streaming_text; // narrative arriving during the current turn
     bool turn_in_progress = false;
     std::string status;         // a status or error line for the UI

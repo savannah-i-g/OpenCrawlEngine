@@ -39,3 +39,7 @@ follows [Semantic Versioning](https://semver.org/).
   lock; every tool validates its arguments and returns a structured result, and
   each is unit-tested including malformed input. Each turn the model receives a
   compact JSON view of the game state.
+- Interactive, engine-resolved combat: attack/defend/flee with deterministic
+  enemy turns, per-enemy xp/gold rewards (and leveling) as foes fall, and
+  victory/defeat/flee resolution with a running combat log. A combat panel
+  surfaces enemies, the log, and the available actions.
