@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <vector>
 
 static int failures = 0;
 #define CHECK(cond)                                                                  \
@@ -115,6 +116,52 @@ int main(void) {
         CHECK(gs.inventory.size() == 5u);              // starting kit
         CHECK(gs.world_description == "a rain-soaked port city");
         CHECK(!gs.story.empty());
+    }
+
+    // Save/load: two campaigns coexist; load switches between them; a restart
+    // resumes whichever was active last.
+    {
+        const char* db2 = "/tmp/oce_engine_saves.db";
+        cleanup(db2);
+        std::string alpha_id;
+        std::string beta_id;
+        {
+            oce::EngineConfig cfg;
+            cfg.store_backend = OCE_STORE_SQLITE;
+            cfg.db_path = db2;
+            oce::Engine engine(cfg);
+            oce::NewGameParams a;
+            a.name = "Alpha";
+            a.cls = oce::CharacterClass::Warrior;
+            engine.new_game(a);
+            oce::NewGameParams b;
+            b.name = "Beta";
+            b.cls = oce::CharacterClass::Rogue;
+            engine.new_game(b);
+
+            std::vector<oce::SaveInfo> saves = engine.list_saves();
+            CHECK(saves.size() == 2u);
+            for (const oce::SaveInfo& si : saves) {
+                if (si.label.find("Alpha") != std::string::npos) {
+                    alpha_id = si.id;
+                }
+                if (si.label.find("Beta") != std::string::npos) {
+                    beta_id = si.id;
+                }
+            }
+            CHECK(!alpha_id.empty() && !beta_id.empty());
+            CHECK(engine.state_copy().player.name == "Beta"); // last new_game is active
+            engine.load_save(alpha_id);
+            CHECK(engine.state_copy().player.name == "Alpha");
+        }
+        {
+            oce::EngineConfig cfg;
+            cfg.store_backend = OCE_STORE_SQLITE;
+            cfg.db_path = db2;
+            oce::Engine engine(cfg);
+            CHECK(engine.state_copy().player.name == "Alpha"); // resumes the active campaign
+        }
+        cleanup(db2);
     }
 
     cleanup(db);

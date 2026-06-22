@@ -56,6 +56,11 @@ struct NewGameParams {
     std::string world_prompt; // free-text setting the game master builds on
 };
 
+struct SaveInfo {
+    std::string id;
+    std::string label;
+};
+
 class Engine {
 public:
     explicit Engine(const EngineConfig& cfg);
@@ -68,6 +73,8 @@ public:
     // Starts a fresh game: creates the character and starting kit, resets state,
     // and begins a new game-master conversation. Synchronous and local.
     void     new_game(const NewGameParams& params);
+    std::vector<SaveInfo> list_saves();                  // campaigns present in the store
+    void     load_save(const std::string& campaign_id);  // switch to and load a campaign
     void     submit_turn(const std::string& player_action); // non-blocking
     void     cancel_turn();
     // Resolves one combat action (attack/defend/flee) synchronously; no-op if a

@@ -106,6 +106,21 @@ Engine::Engine(const EngineConfig& cfg) {
     }
     store_ = oce_store_open(cfg.db_path.empty() ? nullptr : cfg.db_path.c_str(), cfg.store_backend);
 
+    // Resume the campaign that was active when we last ran, if any.
+    {
+        char* active = nullptr;
+        if (store_ != nullptr && oce_store_char_load(store_, "active", &active) == OCE_STORE_OK &&
+            active != nullptr) {
+            oce_json* j = oce_json_parse(active, std::strlen(active));
+            const std::string cid = oce_json_get_str(j, "campaign", "");
+            oce_json_free(j);
+            if (!cid.empty()) {
+                campaign_id_ = cid;
+                character_id_ = cid;
+            }
+        }
+        free(active);
+    }
     load_saved_state();
     oce_secrets_load_env(secrets_, "openrouter", "OPENROUTER_API_KEY");
 
@@ -166,6 +181,8 @@ void Engine::new_game(const NewGameParams& params) {
         opening += ".";
         state_.story.push_back(Message{"system", opening, 0});
         state_.suggested_actions = {"Look around", "Check your belongings", "Set out"};
+        campaign_id_ = "campaign-" + std::to_string(rng_.between(100000, 999999));
+        character_id_ = campaign_id_;
         reload_agent_ = true; // a new game starts a fresh game-master conversation
         streaming_text_.clear();
         status_.clear();
@@ -284,7 +301,65 @@ bool Engine::save() {
     ok = (oce_store_campaign_upsert(store_, campaign_id_.c_str(), character_id_.c_str(), json.c_str(),
                                     1) == OCE_STORE_OK) &&
          ok;
+    const std::string active = std::string("{\"campaign\":\"") + campaign_id_ + "\"}";
+    oce_store_char_upsert(store_, "active", active.c_str(), 1);
     return ok;
+}
+
+std::vector<SaveInfo> Engine::list_saves() {
+    std::vector<SaveInfo> out;
+    if (store_ == nullptr) {
+        return out;
+    }
+    char** ids = nullptr;
+    size_t n = 0;
+    if (oce_store_campaign_list(store_, nullptr, &ids, &n) != OCE_STORE_OK) {
+        return out;
+    }
+    for (size_t i = 0; i < n; ++i) {
+        SaveInfo info;
+        info.id = ids[i];
+        char* json = nullptr;
+        if (oce_store_campaign_load(store_, ids[i], &json) == OCE_STORE_OK && json != nullptr) {
+            GameState gs;
+            deserialize_game_state(json, gs);
+            free(json);
+            info.label = gs.player.name + "  (Lv " + std::to_string(gs.player.level) + " " +
+                         class_to_string(gs.player.cls) + ", " + gs.world_state.current_location +
+                         ")";
+        } else {
+            info.label = ids[i];
+        }
+        out.push_back(std::move(info));
+    }
+    oce_store_free_strings(ids, n);
+    return out;
+}
+
+void Engine::load_save(const std::string& id) {
+    if (store_ == nullptr) {
+        return;
+    }
+    char* json = nullptr;
+    if (oce_store_campaign_load(store_, id.c_str(), &json) != OCE_STORE_OK || json == nullptr) {
+        return;
+    }
+    {
+        std::lock_guard<std::mutex> sl(state_mutex_);
+        if (turn_in_progress_) {
+            free(json);
+            return;
+        }
+        state_ = GameState{};
+        deserialize_game_state(json, state_);
+        campaign_id_ = id;
+        character_id_ = id;
+        reload_agent_ = true;
+        status_.clear();
+        streaming_text_.clear();
+    }
+    free(json);
+    save(); // record this campaign as active
 }
 
 std::string Engine::dispatch_tool(const GmTool& tool, const char* args_json) {
@@ -383,6 +458,19 @@ bool Engine::ensure_agent() {
         return false;
     }
     register_tools();
+    // Prime the fresh agent with recent story so a resumed game keeps context.
+    {
+        std::lock_guard<std::mutex> sl(state_mutex_);
+        const size_t count = state_.story.size();
+        const size_t start = (count > 12) ? count - 12 : 0;
+        for (size_t i = start; i < count; ++i) {
+            const Message& m = state_.story[i];
+            const char* role = (m.sender == "player")  ? "user"
+                               : (m.sender == "system") ? "system"
+                                                        : "assistant";
+            oce_agent_seed_message(agent_, role, m.content.c_str());
+        }
+    }
     return true;
 }
 

@@ -2,11 +2,10 @@
 // GamePanels — draws the game interface for one frame and dispatches user
 // intent to the engine. Holds the transient widget state (input buffers).
 
-#include <cstddef>
+#include "oce/engine.hpp"
 
-namespace oce {
-class Engine;
-}
+#include <cstddef>
+#include <vector>
 
 namespace oce::ui {
 
@@ -25,6 +24,8 @@ private:
     bool show_settings_ = false;
     bool show_new_game_ = false;
     bool show_assets_ = false;
+    bool show_load_ = false;
+    std::vector<oce::SaveInfo> saves_;
 };
 
 } // namespace oce::ui
