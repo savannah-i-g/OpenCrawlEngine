@@ -130,6 +130,108 @@ void dice_roll_indicator(const char* prefix) {
     ImGui::TextDisabled("%s rolling… [%d]", prefix, face);
 }
 
+// Renders narrative text with lightweight inline markup: words inside *...* or
+// **...** are drawn in a highlight colour. The renderer word-wraps manually so
+// the emphasis colour can change between words. Markup is display-only; the text
+// is never interactive.
+struct MarkdownToken {
+    std::string text;
+    bool emphasis;
+};
+
+void render_markdown(const std::string& text, const ImVec4& base) {
+    const ImVec4 emph_color(1.0f, 0.86f, 0.55f, 1.0f);
+    std::vector<MarkdownToken> tokens;
+    std::string word;
+    bool emphasis = false;
+    bool word_emphasis = false;
+    bool word_open = false;
+    const size_t n = text.size();
+    for (size_t i = 0; i < n;) {
+        const char c = text[i];
+        if (c == '*') {
+            size_t j = i;
+            while (j < n && text[j] == '*') {
+                ++j;
+            }
+            emphasis = !emphasis; // any run of asterisks toggles emphasis
+            i = j;
+            continue;
+        }
+        if (c == ' ' || c == '\n' || c == '\t' || c == '\r') {
+            if (word_open) {
+                tokens.push_back({word, word_emphasis});
+                word.clear();
+                word_open = false;
+            }
+            if (c == '\n') {
+                tokens.push_back({std::string("\n"), false});
+            }
+            ++i;
+            continue;
+        }
+        if (!word_open) {
+            word_open = true;
+            word_emphasis = emphasis;
+        }
+        word += c;
+        ++i;
+    }
+    if (word_open) {
+        tokens.push_back({word, word_emphasis});
+    }
+
+    const float content_start = ImGui::GetCursorPosX();
+    const float right = content_start + ImGui::GetContentRegionAvail().x;
+    const float space_w = ImGui::CalcTextSize(" ").x;
+    float cursor_x = content_start;
+    bool line_start = true;
+    for (const MarkdownToken& t : tokens) {
+        if (t.text == "\n") {
+            line_start = true;
+            cursor_x = content_start;
+            continue;
+        }
+        const float w = ImGui::CalcTextSize(t.text.c_str()).x;
+        const bool wrap = !line_start && (cursor_x + space_w + w > right);
+        if (!line_start && !wrap) {
+            ImGui::SameLine(0.0f, space_w);
+            cursor_x += space_w + w;
+        } else {
+            cursor_x = content_start + w; // a fresh Text starts a new line
+        }
+        ImGui::TextColored(t.emphasis ? emph_color : base, "%s", t.text.c_str());
+        line_start = false;
+    }
+}
+
+// Applies one of a few built-in palettes to the current ImGui style.
+void apply_theme(const std::string& name) {
+    ImGuiStyle& style = ImGui::GetStyle();
+    if (name == "Parchment") {
+        ImGui::StyleColorsLight();
+        style.Colors[ImGuiCol_WindowBg] = ImVec4(0.96f, 0.93f, 0.85f, 1.0f);
+        style.Colors[ImGuiCol_ChildBg] = ImVec4(0.93f, 0.89f, 0.79f, 1.0f);
+        style.Colors[ImGuiCol_Text] = ImVec4(0.20f, 0.16f, 0.11f, 1.0f);
+        style.Colors[ImGuiCol_Button] = ImVec4(0.82f, 0.74f, 0.58f, 1.0f);
+        style.Colors[ImGuiCol_Header] = ImVec4(0.80f, 0.71f, 0.54f, 1.0f);
+    } else if (name == "Dusk") {
+        ImGui::StyleColorsDark();
+        style.Colors[ImGuiCol_WindowBg] = ImVec4(0.12f, 0.10f, 0.16f, 1.0f);
+        style.Colors[ImGuiCol_TitleBgActive] = ImVec4(0.30f, 0.20f, 0.40f, 1.0f);
+        style.Colors[ImGuiCol_Button] = ImVec4(0.34f, 0.26f, 0.46f, 1.0f);
+        style.Colors[ImGuiCol_Header] = ImVec4(0.34f, 0.26f, 0.46f, 1.0f);
+    } else { // Slate (default)
+        ImGui::StyleColorsDark();
+        style.Colors[ImGuiCol_WindowBg] = ImVec4(0.11f, 0.12f, 0.14f, 1.0f);
+    }
+    style.WindowRounding = 5.0f;
+    style.FrameRounding = 4.0f;
+    style.GrabRounding = 4.0f;
+}
+
+const char* const kThemes[] = {"Slate", "Parchment", "Dusk"};
+
 } // namespace
 
 GamePanels::GamePanels() {
@@ -150,6 +252,7 @@ GamePanels::GamePanels() {
 
 void GamePanels::draw(oce::Engine& engine) {
     const oce::Snapshot s = engine.snapshot();
+    apply_theme(s.theme);
 
     if (ImGui::BeginMainMenuBar()) {
         if (ImGui::BeginMenu("Game")) {
@@ -300,18 +403,19 @@ void GamePanels::draw(oce::Engine& engine) {
     if (ImGui::Begin("Story")) {
         const float footer = ImGui::GetFrameHeightWithSpacing() * 3.0f;
         if (ImGui::BeginChild("log", ImVec2(0.0f, -footer), ImGuiChildFlags_Borders)) {
+            const ImVec4 text_col = ImGui::GetStyleColorVec4(ImGuiCol_Text);
             for (const oce::Message& m : s.story) {
                 if (m.sender == "player") {
-                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.8f, 1.0f, 1.0f));
-                    ImGui::TextWrapped("> %s", m.content.c_str());
-                    ImGui::PopStyleColor();
+                    render_markdown("> " + m.content, ImVec4(0.60f, 0.80f, 1.0f, 1.0f));
+                } else if (m.sender == "system") {
+                    render_markdown(m.content, ImVec4(0.62f, 0.62f, 0.68f, 1.0f));
                 } else {
-                    ImGui::TextWrapped("%s", m.content.c_str());
+                    render_markdown(m.content, text_col);
                 }
                 ImGui::Spacing();
             }
             if (!s.streaming_text.empty()) {
-                ImGui::TextWrapped("%s", s.streaming_text.c_str());
+                render_markdown(s.streaming_text, text_col);
             }
             if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY()) {
                 ImGui::SetScrollHereY(1.0f);
@@ -770,6 +874,18 @@ void GamePanels::draw(oce::Engine& engine) {
                     engine.set_base_url(base_url_buf_);
                 }
             }
+            ImGui::Separator();
+            int theme_index = 0;
+            for (int i = 0; i < (int) (sizeof kThemes / sizeof kThemes[0]); ++i) {
+                if (s.theme == kThemes[i]) {
+                    theme_index = i;
+                }
+            }
+            if (ImGui::Combo("Theme", &theme_index, kThemes,
+                             (int) (sizeof kThemes / sizeof kThemes[0]))) {
+                engine.set_theme(kThemes[theme_index]);
+            }
+
             if (s.total_tokens > 0) {
                 ImGui::TextDisabled("Tokens used this session: %lld", s.total_tokens);
             }

@@ -86,6 +86,7 @@ public:
     bool     set_api_key(const std::string& key);
     void     set_model(const std::string& model);       // persisted; rebuilds the agent
     void     set_base_url(const std::string& base_url); // persisted; rebuilds the agent
+    void     set_theme(const std::string& theme);        // persisted UI theme preference
     // Starts a fresh game: creates the character and starting kit, resets state,
     // and begins a new game-master conversation. Synchronous and local.
     void     new_game(const NewGameParams& params); // new character + first campaign
@@ -151,7 +152,8 @@ private:
     std::string structured_call(const std::string& system_prompt, const std::string& user_msg,
                                 const std::string& tool_name, const std::string& tool_spec_json);
     void        load_saved_state();
-    void        persist_settings(const std::string& model, const std::string& base_url);
+    void        persist_settings(const std::string& model, const std::string& base_url,
+                                 const std::string& theme);
     std::string system_prompt() const;
 
     oce_secrets* secrets_ = nullptr;
@@ -162,6 +164,7 @@ private:
 
     std::string base_url_;
     std::string model_;
+    std::string theme_;
     std::string character_id_ = "default";
     std::string campaign_id_ = "default";
     bool               use_test_backend_ = false;

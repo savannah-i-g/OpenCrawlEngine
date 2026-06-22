@@ -178,6 +178,7 @@ int main(void) {
 
             engine.load_save(alpha_campaign); // make Alpha's first campaign active
             engine.set_model("test/model-x");
+            engine.set_theme("Dusk");
         }
         {
             oce::EngineConfig cfg;
@@ -186,6 +187,7 @@ int main(void) {
             oce::Engine engine(cfg);
             CHECK(engine.state_copy().player.name == "Alpha"); // resumes active char+campaign
             CHECK(engine.snapshot().model == "test/model-x");  // provider settings persist
+            CHECK(engine.snapshot().theme == "Dusk");          // theme preference persists
         }
         cleanup(db2);
     }
