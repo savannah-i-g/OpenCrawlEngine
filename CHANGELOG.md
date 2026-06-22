@@ -62,3 +62,21 @@ follows [Semantic Versioning](https://semver.org/).
   for future migration.
 - Settings: choose and persist the model and base URL (alongside the in-memory
   API key), with OpenRouter ranking headers, plus a running token-usage meter.
+- Install rules and packaging: a Debian package for Ubuntu 24.04 and a
+  self-contained AppImage for generic Linux (`scripts/make-deb.sh`,
+  `scripts/make-appimage.sh`), each bundling the icon set; the AppImage also
+  bundles a serif font. An application icon and desktop entry are included.
+- A README with install, build-from-source, and configuration instructions and
+  status badges.
+
+### Changed
+- Runtime resources (icons and fonts) are resolved relative to the executable, so
+  installed and packaged builds work from any directory; the Dear ImGui layout is
+  stored under the user data directory rather than the working directory.
+- The combat log varies its narration by hit, miss, defeat, and enemy action.
+- Skill checks and combat rolls are gated behind a prompt that appears once the
+  message finishes, rather than interrupting a streaming turn.
+
+### Fixed
+- Skill checks no longer loop: a resolved check cannot immediately re-arm another
+  within the same narration turn.

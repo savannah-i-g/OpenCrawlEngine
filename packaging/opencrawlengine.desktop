@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=OpenCrawlEngine
+Comment=Local single-player RPG with a language-model game master
+Exec=OpenCrawlEngine
+Icon=opencrawlengine
+Terminal=false
+Categories=Game;RolePlaying;
