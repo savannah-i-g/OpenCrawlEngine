@@ -49,6 +49,13 @@ struct EngineConfig {
     uint64_t rng_seed = 0;
 };
 
+struct NewGameParams {
+    std::string name = "Adventurer";
+    CharacterClass cls = CharacterClass::Warrior;
+    std::string background;
+    std::string world_prompt; // free-text setting the game master builds on
+};
+
 class Engine {
 public:
     explicit Engine(const EngineConfig& cfg);
@@ -58,6 +65,9 @@ public:
     Engine& operator=(const Engine&) = delete;
 
     bool     set_api_key(const std::string& key);
+    // Starts a fresh game: creates the character and starting kit, resets state,
+    // and begins a new game-master conversation. Synchronous and local.
+    void     new_game(const NewGameParams& params);
     void     submit_turn(const std::string& player_action); // non-blocking
     void     cancel_turn();
     // Resolves one combat action (attack/defend/flee) synchronously; no-op if a

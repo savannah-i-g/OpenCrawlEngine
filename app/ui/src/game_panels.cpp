@@ -5,6 +5,7 @@
 
 #include "imgui.h"
 
+#include <cstdio>
 #include <cstring>
 
 namespace oce::ui {
@@ -12,6 +13,9 @@ namespace oce::ui {
 GamePanels::GamePanels() {
     input_[0] = '\0';
     api_key_[0] = '\0';
+    new_background_[0] = '\0';
+    new_world_[0] = '\0';
+    std::snprintf(new_name_, sizeof new_name_, "%s", "Adventurer");
 }
 
 void GamePanels::draw(oce::Engine& engine) {
@@ -19,6 +23,9 @@ void GamePanels::draw(oce::Engine& engine) {
 
     if (ImGui::BeginMainMenuBar()) {
         if (ImGui::BeginMenu("Game")) {
+            if (ImGui::MenuItem("New Game...")) {
+                show_new_game_ = true;
+            }
             if (ImGui::MenuItem("Settings...")) {
                 show_settings_ = true;
             }
@@ -155,6 +162,33 @@ void GamePanels::draw(oce::Engine& engine) {
                         s.skill_check.difficulty, s.skill_check.num_dice);
             if (ImGui::Button("Roll")) {
                 engine.resolve_skill_check();
+            }
+        }
+        ImGui::End();
+    }
+
+    // New game.
+    if (show_new_game_) {
+        if (ImGui::Begin("New Game", &show_new_game_)) {
+            ImGui::InputText("Name", new_name_, sizeof new_name_);
+            const char* classes[] = {"Warrior", "Rogue", "Mage", "Cleric", "Ranger", "Bard"};
+            ImGui::Combo("Class", &new_class_, classes, 6);
+            ImGui::InputTextMultiline("Background", new_background_, sizeof new_background_,
+                                      ImVec2(0.0f, 60.0f));
+            ImGui::InputTextMultiline("World", new_world_, sizeof new_world_, ImVec2(0.0f, 80.0f));
+            if (ImGui::Button("Begin")) {
+                oce::NewGameParams p;
+                p.name = (new_name_[0] != '\0') ? new_name_ : "Adventurer";
+                const oce::CharacterClass by_index[] = {
+                    oce::CharacterClass::Warrior, oce::CharacterClass::Rogue,
+                    oce::CharacterClass::Mage,    oce::CharacterClass::Cleric,
+                    oce::CharacterClass::Ranger,  oce::CharacterClass::Bard};
+                const int idx = (new_class_ >= 0 && new_class_ < 6) ? new_class_ : 0;
+                p.cls = by_index[idx];
+                p.background = new_background_;
+                p.world_prompt = new_world_;
+                engine.new_game(p);
+                show_new_game_ = false;
             }
         }
         ImGui::End();
