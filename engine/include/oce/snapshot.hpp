@@ -25,6 +25,7 @@ struct Snapshot {
     long long total_tokens = 0;
     std::string model;
     std::string base_url;
+    std::string theme; // persisted UI theme name
     // Latest world-parameter autofill suggestion; seq increments per result so
     // the UI can detect and apply a new suggestion.
     std::string autofill_value;

@@ -130,12 +130,16 @@ Engine::Engine(const EngineConfig& cfg) {
             oce_json* j = oce_json_parse(settings, std::strlen(settings));
             const std::string m = oce_json_get_str(j, "model", "");
             const std::string b = oce_json_get_str(j, "base_url", "");
+            const std::string th = oce_json_get_str(j, "theme", "");
             oce_json_free(j);
             if (!m.empty()) {
                 model_ = m;
             }
             if (!b.empty()) {
                 base_url_ = b;
+            }
+            if (!th.empty()) {
+                theme_ = th;
             }
         }
         free(settings);
@@ -182,13 +186,15 @@ bool Engine::set_api_key(const std::string& key) {
     return ok;
 }
 
-void Engine::persist_settings(const std::string& model, const std::string& base_url) {
+void Engine::persist_settings(const std::string& model, const std::string& base_url,
+                              const std::string& theme) {
     if (store_ == nullptr) {
         return;
     }
     oce_json* o = oce_json_new_object();
     oce_json_obj_set_str(o, "model", model.c_str());
     oce_json_obj_set_str(o, "base_url", base_url.c_str());
+    oce_json_obj_set_str(o, "theme", theme.c_str());
     char* text = oce_json_print(o, false);
     if (text != nullptr) {
         oce_store_char_upsert(store_, "settings", text, 1);
@@ -200,27 +206,45 @@ void Engine::persist_settings(const std::string& model, const std::string& base_
 void Engine::set_model(const std::string& model) {
     std::string m;
     std::string b;
+    std::string th;
     {
         std::lock_guard<std::mutex> sl(state_mutex_);
         model_ = model;
         reload_agent_ = true;
         m = model_;
         b = base_url_;
+        th = theme_;
     }
-    persist_settings(m, b);
+    persist_settings(m, b, th);
 }
 
 void Engine::set_base_url(const std::string& base_url) {
     std::string m;
     std::string b;
+    std::string th;
     {
         std::lock_guard<std::mutex> sl(state_mutex_);
         base_url_ = base_url;
         reload_agent_ = true;
         m = model_;
         b = base_url_;
+        th = theme_;
     }
-    persist_settings(m, b);
+    persist_settings(m, b, th);
+}
+
+void Engine::set_theme(const std::string& theme) {
+    std::string m;
+    std::string b;
+    std::string th;
+    {
+        std::lock_guard<std::mutex> sl(state_mutex_);
+        theme_ = theme;
+        m = model_;
+        b = base_url_;
+        th = theme_;
+    }
+    persist_settings(m, b, th);
 }
 
 void Engine::new_game(const NewGameParams& params) {
@@ -529,6 +553,7 @@ Snapshot Engine::snapshot() {
     s.total_tokens = total_tokens_;
     s.model = model_;
     s.base_url = base_url_;
+    s.theme = theme_;
     s.meta = state_.meta;
     s.autofill_value = autofill_value_;
     s.autofill_seq = autofill_seq_;
