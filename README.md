@@ -2,6 +2,8 @@
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) ![Version](https://img.shields.io/badge/version-0.1.0-orange.svg) ![C++17](https://img.shields.io/badge/C%2B%2B-17-00599C.svg?logo=cplusplus&logoColor=white) ![C11](https://img.shields.io/badge/C-11-A8B9CC.svg?logo=c&logoColor=white) ![Platform](https://img.shields.io/badge/platform-Linux-333333.svg?logo=linux&logoColor=white) ![Build](https://img.shields.io/badge/build-CMake-064F8C.svg?logo=cmake&logoColor=white)
 
+![OpenCrawlEngine in play](git_resources/ScreenshotUI.png)
+
 OpenCrawlEngine is a local, single-player role-playing game engine driven by a
 language-model game master. It runs on your machine, talks to an OpenAI-compatible
 endpoint that you supply a key for, stores characters and campaigns in a local
