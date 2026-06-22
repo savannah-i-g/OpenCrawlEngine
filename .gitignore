@@ -17,8 +17,8 @@
 *.AppImage
 *.deb
 
-# Local, uncommitted working notes and lists
-/.claude/local/
+# Claude Code tooling and local notes (never committed to this repo)
+/.claude/
 
 # Local databases and saved games
 *.db
