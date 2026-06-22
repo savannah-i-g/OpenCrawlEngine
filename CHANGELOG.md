@@ -60,3 +60,5 @@ follows [Semantic Versioning](https://semver.org/).
   resumes on restart, re-seeding recent story into a fresh game-master
   conversation so context carries over. The save format carries a version field
   for future migration.
+- Settings: choose and persist the model and base URL (alongside the in-memory
+  API key), with OpenRouter ranking headers, plus a running token-usage meter.

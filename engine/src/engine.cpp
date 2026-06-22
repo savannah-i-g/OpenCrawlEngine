@@ -121,6 +121,24 @@ Engine::Engine(const EngineConfig& cfg) {
         }
         free(active);
     }
+    {
+        char* settings = nullptr;
+        if (store_ != nullptr &&
+            oce_store_char_load(store_, "settings", &settings) == OCE_STORE_OK &&
+            settings != nullptr) {
+            oce_json* j = oce_json_parse(settings, std::strlen(settings));
+            const std::string m = oce_json_get_str(j, "model", "");
+            const std::string b = oce_json_get_str(j, "base_url", "");
+            oce_json_free(j);
+            if (!m.empty()) {
+                model_ = m;
+            }
+            if (!b.empty()) {
+                base_url_ = b;
+            }
+        }
+        free(settings);
+    }
     load_saved_state();
     oce_secrets_load_env(secrets_, "openrouter", "OPENROUTER_API_KEY");
 
@@ -161,6 +179,47 @@ bool Engine::set_api_key(const std::string& key) {
     bool ok = oce_secrets_set(secrets_, "openrouter", key.c_str()) == OCE_SECRETS_OK;
     reload_agent_ = true; // rebuild the agent with the new key on the next turn
     return ok;
+}
+
+void Engine::persist_settings(const std::string& model, const std::string& base_url) {
+    if (store_ == nullptr) {
+        return;
+    }
+    oce_json* o = oce_json_new_object();
+    oce_json_obj_set_str(o, "model", model.c_str());
+    oce_json_obj_set_str(o, "base_url", base_url.c_str());
+    char* text = oce_json_print(o, false);
+    if (text != nullptr) {
+        oce_store_char_upsert(store_, "settings", text, 1);
+        free(text);
+    }
+    oce_json_free(o);
+}
+
+void Engine::set_model(const std::string& model) {
+    std::string m;
+    std::string b;
+    {
+        std::lock_guard<std::mutex> sl(state_mutex_);
+        model_ = model;
+        reload_agent_ = true;
+        m = model_;
+        b = base_url_;
+    }
+    persist_settings(m, b);
+}
+
+void Engine::set_base_url(const std::string& base_url) {
+    std::string m;
+    std::string b;
+    {
+        std::lock_guard<std::mutex> sl(state_mutex_);
+        base_url_ = base_url;
+        reload_agent_ = true;
+        m = model_;
+        b = base_url_;
+    }
+    persist_settings(m, b);
 }
 
 void Engine::new_game(const NewGameParams& params) {
@@ -279,6 +338,8 @@ Snapshot Engine::snapshot() {
     s.turn_in_progress = turn_in_progress_;
     s.status = status_;
     s.total_tokens = total_tokens_;
+    s.model = model_;
+    s.base_url = base_url_;
     return s;
 }
 
@@ -431,18 +492,22 @@ bool Engine::ensure_agent() {
     } else {
         char key[1024];
         bool have_key;
+        std::string base_url_copy;
+        std::string model_copy;
         {
             std::lock_guard<std::mutex> sl(state_mutex_);
             have_key = oce_secrets_get(secrets_, "openrouter", key, sizeof key) == OCE_SECRETS_OK;
+            base_url_copy = base_url_;
+            model_copy = model_;
         }
         if (!have_key) {
             return false;
         }
         const char* extra[] = {"X-Title: OpenCrawlEngine"};
         oce_llm_config cfg;
-        cfg.base_url = base_url_.c_str();
+        cfg.base_url = base_url_copy.c_str();
         cfg.api_key = key;
-        cfg.model = model_.c_str();
+        cfg.model = model_copy.c_str();
         cfg.extra_headers = extra;
         cfg.extra_header_count = 1;
         llm_ = oce_llm_new(&cfg, http_);

@@ -21,6 +21,8 @@ private:
     char new_background_[512];
     char new_world_[512];
     int  new_class_ = 0;
+    char model_buf_[128];
+    char base_url_buf_[256];
     bool show_settings_ = false;
     bool show_new_game_ = false;
     bool show_assets_ = false;

@@ -5,18 +5,21 @@ OpenAI-compatible API key; the engine runs on your machine, stores your
 characters and campaigns in a local SQLite database, and renders a desktop
 interface. No server, no account, no telemetry.
 
-> **Status:** early development. The build and application scaffold are in place;
-> gameplay systems land milestone by milestone (see `CHANGELOG.md`).
+> **Status:** feature-complete for single-player play — character creation, a
+> tool-driven game master, turn-based combat, skill checks, inventory, assets,
+> and local saves. Bring an OpenRouter key to play. See `CHANGELOG.md`.
 
 ## Features
 
-- Language-model game master that narrates and drives the world through
+- A language-model game master that narrates and drives the world through
   structured tool calls.
-- Deterministic rules engine: attributes, items, turn-based combat, skill
-  checks, and leveling.
-- Characters and campaigns persisted locally in SQLite.
-- Desktop UI built with Dear ImGui.
-- Bring-your-own-key: works with any OpenAI-compatible endpoint.
+- Create a character (six classes, attributes, a background) in a world of your
+  own description.
+- A deterministic rules engine: attributes, items and equipment, turn-based
+  combat, skill checks, leveling, businesses, factions, and world state.
+- Multiple campaigns saved locally in SQLite, resuming where you left off.
+- A Dear ImGui desktop interface; choose your model and endpoint in settings.
+- Bring-your-own-key: works with any OpenAI-compatible endpoint (e.g. OpenRouter).
 
 ## Building
 

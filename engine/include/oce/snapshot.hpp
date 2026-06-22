@@ -22,6 +22,8 @@ struct Snapshot {
     bool turn_in_progress = false;
     std::string status;         // a status or error line for the UI
     long long total_tokens = 0;
+    std::string model;
+    std::string base_url;
 };
 
 } // namespace oce
