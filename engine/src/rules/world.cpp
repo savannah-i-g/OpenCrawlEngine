@@ -20,6 +20,21 @@ int collect_business_income(Business& business, long long now_minutes) {
     return (int) gold;
 }
 
+int pending_business_income(const Business& business, long long now_minutes) {
+    if (business.income_per_day <= 0 || now_minutes <= business.last_collected) {
+        return 0;
+    }
+    const long long days = (now_minutes - business.last_collected) / kMinutesPerDay;
+    if (days <= 0) {
+        return 0;
+    }
+    long long gold = days * (long long) business.income_per_day;
+    if (gold > 1000000000LL) {
+        gold = 1000000000LL;
+    }
+    return (int) gold;
+}
+
 void change_faction(Faction& faction, int relationship_delta, int reputation_delta) {
     faction.relationship = std::clamp(faction.relationship + relationship_delta, -100, 100);
     faction.reputation = std::clamp(faction.reputation + reputation_delta, 0, 1000);

@@ -4,6 +4,7 @@
 #include "oce/rules/character.hpp"
 #include "oce/rules/combat.hpp"
 #include "oce/rules/items.hpp"
+#include "oce/rules/mounts.hpp"
 #include "oce/rules/skills.hpp"
 #include "oce/rules/world.hpp"
 #include "oce/serialize.hpp"
@@ -287,6 +288,22 @@ void Engine::request_autofill(const WorldParams& current, const std::string& fie
     turn_cv_.notify_one();
 }
 
+void Engine::acquire_mount() {
+    {
+        std::lock_guard<std::mutex> sl(state_mutex_);
+        if (turn_in_progress_) {
+            return;
+        }
+        turn_in_progress_ = true;
+        status_ = "Acquiring a mount…";
+    }
+    {
+        std::lock_guard<std::mutex> tl(turn_mutex_);
+        has_mount_ = true;
+    }
+    turn_cv_.notify_one();
+}
+
 void Engine::submit_turn(const std::string& player_action) {
     {
         std::lock_guard<std::mutex> sl(state_mutex_);
@@ -470,6 +487,28 @@ void Engine::allocate_attribute(const std::string& attribute) {
     if (changed) {
         save();
     }
+}
+
+int Engine::collect_income() {
+    int total = 0;
+    {
+        std::lock_guard<std::mutex> sl(state_mutex_);
+        if (turn_in_progress_) {
+            return 0;
+        }
+        for (Business& b : state_.assets.businesses) {
+            total += collect_business_income(b, state_.world_state.time_elapsed);
+        }
+        if (total > 0) {
+            state_.player.gold += total;
+            state_.story.push_back(Message{
+                "system", "You collect " + std::to_string(total) + " gold from your holdings.", 0});
+        }
+    }
+    if (total > 0) {
+        save();
+    }
+    return total;
 }
 
 Snapshot Engine::snapshot() {
@@ -1010,6 +1049,8 @@ void Engine::run_worldgen(const WorldParams& params) {
     std::string brief = "Generate the opening world for a new adventure";
     {
         std::lock_guard<std::mutex> sl(state_mutex_);
+        state_.world_state.technology = params.technology;
+        state_.world_state.magic = params.magic;
         brief += " for a level " + std::to_string(state_.player.level) + " " +
                  class_to_string(state_.player.cls) + ".\n";
     }
@@ -1229,8 +1270,73 @@ void Engine::run_combat(CombatInput action, int target_index, const std::string&
     idle_cv_.notify_all();
 }
 
+void Engine::run_acquire_mount() {
+    std::string tech;
+    std::string magic;
+    {
+        std::lock_guard<std::mutex> sl(state_mutex_);
+        tech = state_.world_state.technology;
+        magic = state_.world_state.magic;
+    }
+    const std::vector<MountVehicle> roster = available_mounts(tech, magic);
+    MountVehicle chosen;
+    bool have = false;
+    {
+        std::lock_guard<std::mutex> sl(state_mutex_);
+        if (!roster.empty()) {
+            chosen = roster[(size_t) rng_.between(0, (int) roster.size() - 1)];
+            chosen.id = "mount-" + std::to_string(rng_.between(100000, 999999));
+            chosen.condition = 100;
+            chosen.era = tech;
+            have = true;
+        }
+    }
+    if (!have) {
+        std::lock_guard<std::mutex> sl(state_mutex_);
+        status_ = "No mounts are available here.";
+        turn_in_progress_ = false;
+        idle_cv_.notify_all();
+        return;
+    }
+
+    const std::string sys =
+        "You give a single mount or vehicle a unique name and a vivid one-sentence description that "
+        "fits the setting. Reply only by calling describe_mount.";
+    const std::string user = "Base mount: " + chosen.name + " (" + chosen.type + ") — " +
+                             chosen.description + ".\nWorld technology: " +
+                             (tech.empty() ? "unspecified" : tech) +
+                             (magic.empty() ? "" : (", magic: " + magic)) + ".";
+    const char* spec =
+        "{\"type\":\"function\",\"function\":{\"name\":\"describe_mount\","
+        "\"description\":\"Give the mount a unique name and a vivid one-sentence description.\","
+        "\"parameters\":{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\"},"
+        "\"description\":{\"type\":\"string\"}},\"required\":[\"name\"]}}}";
+    const std::string args = structured_call(sys, user, "describe_mount", spec);
+    if (!args.empty()) {
+        oce_json* j = oce_json_parse(args.c_str(), args.size());
+        const std::string name = oce_json_get_str(j, "name", "");
+        const std::string desc = oce_json_get_str(j, "description", "");
+        oce_json_free(j);
+        if (!name.empty()) {
+            chosen.name = name;
+        }
+        if (!desc.empty()) {
+            chosen.description = desc;
+        }
+    }
+    {
+        std::lock_guard<std::mutex> sl(state_mutex_);
+        state_.assets.mounts.push_back(chosen);
+        state_.story.push_back(Message{"system", "You acquire a mount: " + chosen.name + ".", 0});
+        status_.clear();
+        turn_in_progress_ = false;
+    }
+    save();
+    idle_cv_.notify_all();
+}
+
 void Engine::worker_main() {
-    enum class Job { Turn, Worldgen, Autofill, Combat };
+    enum class Job { Turn, Worldgen, Autofill, Combat, Mount };
     for (;;) {
         std::string input;
         WorldParams world;
@@ -1243,7 +1349,8 @@ void Engine::worker_main() {
         {
             std::unique_lock<std::mutex> lk(turn_mutex_);
             turn_cv_.wait(lk, [this] {
-                return has_pending_ || has_worldgen_ || has_autofill_ || has_combat_ || stop_;
+                return has_pending_ || has_worldgen_ || has_autofill_ || has_combat_ ||
+                       has_mount_ || stop_;
             });
             if (stop_) {
                 return;
@@ -1254,6 +1361,9 @@ void Engine::worker_main() {
                 combat_item = std::move(pending_combat_item_);
                 has_combat_ = false;
                 job = Job::Combat;
+            } else if (has_mount_) {
+                has_mount_ = false;
+                job = Job::Mount;
             } else if (has_worldgen_) {
                 world = std::move(pending_world_);
                 has_worldgen_ = false;
@@ -1271,6 +1381,8 @@ void Engine::worker_main() {
         }
         if (job == Job::Combat) {
             run_combat(combat_kind, combat_target, combat_item);
+        } else if (job == Job::Mount) {
+            run_acquire_mount();
         } else if (job == Job::Worldgen) {
             run_worldgen(world);
         } else if (job == Job::Autofill) {
