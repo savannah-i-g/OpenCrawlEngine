@@ -411,6 +411,13 @@ void Engine::resolve_skill_check() {
         const int dc = sc.difficulty + difficulty_dc_offset(state_.meta.difficulty);
         const SkillCheckResult r = roll_skill_check(rng_, sc.num_dice, mod, dc);
         const CheckTier ct = check_tier(r);
+        last_roll_.name = attribute;
+        last_roll_.dice = r.dice;
+        last_roll_.modifier = mod;
+        last_roll_.total = r.total;
+        last_roll_.target = dc;
+        last_roll_.success = r.success;
+        last_roll_.seq = ++dice_seq_;
         const char* tier = (ct == CheckTier::CriticalSuccess)   ? " — critical success!"
                            : (ct == CheckTier::Success)         ? " — success."
                            : (ct == CheckTier::CriticalFailure) ? " — critical failure!"
@@ -578,6 +585,7 @@ Snapshot Engine::snapshot() {
     s.base_url = base_url_;
     s.theme = theme_;
     s.meta = state_.meta;
+    s.last_roll = last_roll_;
     s.autofill_value = autofill_value_;
     s.autofill_seq = autofill_seq_;
     return s;
@@ -845,6 +853,12 @@ std::string Engine::system_prompt() const {
            "second-person prose: NEVER write a list of options or a \"what do you do?\" menu, and "
            "NEVER mention tools, function or tool names (such as set_suggested_actions), or emit "
            "JSON in the narration.\n\n"
+           "Tint vivid keywords with colour tags for atmosphere — wrap a word or short phrase like "
+           "<green>verdant moss</green>, <red>fresh blood</red>, <blue>frozen lake</blue>, "
+           "<gold>ancient treasure</gold>, <purple>arcane energy</purple>, or <gray>cold "
+           "stone</gray>. Use green for nature, red for danger or wounds, purple for magic, gold "
+           "for riches and key names, blue for water or cold, gray for the mundane. Use them "
+           "sparingly (a few per turn) and only these six tag names.\n\n"
            "The engine owns all randomness: never invent dice results or decide whether an attack "
            "or skill check succeeds — call the tool and react to its result. Do not state the "
            "player's numeric stats in the prose; the interface shows them.";
@@ -1296,6 +1310,15 @@ void Engine::run_combat(CombatInput action, int target_index, const std::string&
                                    : (action == CombatInput::Flee) ? CombatAction::Flee
                                                                    : CombatAction::Attack;
             const CombatTurnResult r = resolve_player_action(state_, rng_, a, target_index);
+            if (r.attack_made) {
+                last_roll_.name = r.attack_label;
+                last_roll_.dice = r.attack_dice;
+                last_roll_.modifier = r.attack_modifier;
+                last_roll_.total = r.attack_total;
+                last_roll_.target = r.attack_target;
+                last_roll_.success = r.attack_total >= r.attack_target;
+                last_roll_.seq = ++dice_seq_;
+            }
             if (r.combat_ended) {
                 ended = true;
                 outcome = r.outcome;

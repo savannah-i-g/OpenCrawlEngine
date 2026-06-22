@@ -5,13 +5,15 @@
 #include "oce/rules/dice.hpp"
 
 #include <string>
+#include <vector>
 
 namespace oce {
 
 struct SkillCheckResult {
     bool success = false;
     int total = 0;
-    int margin = 0; // total - difficulty
+    int margin = 0;        // total - difficulty
+    std::vector<int> dice; // individual d6 results
 };
 
 // Pure: total = roll_total + modifier; success when total >= difficulty.

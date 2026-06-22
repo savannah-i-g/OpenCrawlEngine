@@ -182,6 +182,8 @@ private:
     long long    total_tokens_ = 0;
     std::string  autofill_value_;
     long long    autofill_seq_ = 0;
+    DiceRoll     last_roll_;
+    long long    dice_seq_ = 0;
 
     std::mutex              turn_mutex_;
     std::condition_variable turn_cv_;

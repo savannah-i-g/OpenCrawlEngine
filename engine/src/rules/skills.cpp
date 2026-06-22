@@ -16,7 +16,17 @@ SkillCheckResult roll_skill_check(Rng& rng, int num_dice, int modifier_value, in
     if (num_dice < 1) {
         num_dice = 1;
     }
-    return perform_skill_check(rng.roll(num_dice, 6), modifier_value, difficulty);
+    std::vector<int> dice;
+    dice.reserve((size_t) num_dice);
+    int roll_total = 0;
+    for (int i = 0; i < num_dice; ++i) {
+        const int d = rng.between(1, 6);
+        dice.push_back(d);
+        roll_total += d;
+    }
+    SkillCheckResult r = perform_skill_check(roll_total, modifier_value, difficulty);
+    r.dice = std::move(dice);
+    return r;
 }
 
 SpellGate can_cast_spell(const Player& player) {

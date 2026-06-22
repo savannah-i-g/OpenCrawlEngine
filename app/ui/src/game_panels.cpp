@@ -191,12 +191,6 @@ std::string effects_summary(const oce::ItemEffects& e) {
     return out;
 }
 
-void dice_roll_indicator(const char* prefix) {
-    const long ticks = static_cast<long>(ImGui::GetTime() * 10.0);
-    const int face = static_cast<int>(((ticks % 6) + 6) % 6) + 1;
-    ImGui::TextDisabled("%s rolling… [%d]", prefix, face);
-}
-
 // A square-cornered stat bar with a horizontal dark→bright gradient fill, a
 // themed border, and a centered value overlay. Advances the cursor like a
 // widget of the given size.
@@ -235,28 +229,64 @@ void heading(const char* text) {
     }
 }
 
-// Narrative with lightweight inline markdown: **bold**/__bold__ render in warm
-// gold with a bold serif; *italic*/_italic_ render in an italic serif; the two
-// combine. Markup is display-only and word-wrapped manually so styling can vary
-// between words.
+struct ColorTag {
+    const char* name;
+    ImVec4 color;
+};
+
+const ColorTag kColorTags[] = {
+    {"green", ImVec4(0.46f, 0.80f, 0.42f, 1.0f)},  {"red", ImVec4(0.87f, 0.34f, 0.31f, 1.0f)},
+    {"blue", ImVec4(0.43f, 0.63f, 0.95f, 1.0f)},   {"gold", ImVec4(0.90f, 0.76f, 0.40f, 1.0f)},
+    {"purple", ImVec4(0.72f, 0.50f, 0.93f, 1.0f)}, {"gray", ImVec4(0.64f, 0.62f, 0.56f, 1.0f)},
+    {"grey", ImVec4(0.64f, 0.62f, 0.56f, 1.0f)},
+};
+
+bool color_for_tag(const std::string& name, ImVec4& out) {
+    for (const ColorTag& t : kColorTags) {
+        if (name == t.name) {
+            out = t.color;
+            return true;
+        }
+    }
+    return false;
+}
+
+// Narrative with lightweight inline markup: **bold** (warm gold, bold serif),
+// *italic* (italic serif), and <color>…</color> tints (green/red/blue/gold/
+// purple/gray). Display-only, word-wrapped manually so styling varies per word.
 void render_markdown(const std::string& text, const ImVec4& base) {
-    const ImVec4 bold_color(0.88f, 0.74f, 0.42f, 1.0f); // warm gold for emphasised terms
+    const ImVec4 bold_color(0.90f, 0.76f, 0.42f, 1.0f);
     struct Token {
         std::string text;
         bool bold;
         bool italic;
         bool brk;
+        bool has_color;
+        ImVec4 color;
     };
     std::vector<Token> tokens;
     std::string word;
     bool word_open = false;
     bool word_bold = false;
     bool word_italic = false;
+    bool word_has_color = false;
+    ImVec4 word_color(1, 1, 1, 1);
     bool bold = false;
     bool italic = false;
+    bool has_color = false;
+    ImVec4 cur_color(1, 1, 1, 1);
+    auto open_word = [&]() {
+        if (!word_open) {
+            word_open = true;
+            word_bold = bold;
+            word_italic = italic;
+            word_has_color = has_color;
+            word_color = cur_color;
+        }
+    };
     auto push_word = [&]() {
         if (word_open) {
-            tokens.push_back({word, word_bold, word_italic, false});
+            tokens.push_back({word, word_bold, word_italic, false, word_has_color, word_color});
             word.clear();
             word_open = false;
         }
@@ -264,6 +294,25 @@ void render_markdown(const std::string& text, const ImVec4& base) {
     const size_t n = text.size();
     for (size_t i = 0; i < n;) {
         const char c = text[i];
+        if (c == '<') {
+            const size_t j = text.find('>', i);
+            if (j != std::string::npos) {
+                const std::string inner = text.substr(i + 1, j - (i + 1));
+                const bool close = !inner.empty() && inner[0] == '/';
+                ImVec4 col;
+                if (color_for_tag(close ? inner.substr(1) : inner, col)) {
+                    push_word();
+                    has_color = !close;
+                    cur_color = col;
+                    i = j + 1;
+                    continue;
+                }
+            }
+            open_word();
+            word += c;
+            ++i;
+            continue;
+        }
         if (c == '*' || c == '_') {
             size_t j = i;
             while (j < n && (text[j] == '*' || text[j] == '_')) {
@@ -271,16 +320,16 @@ void render_markdown(const std::string& text, const ImVec4& base) {
             }
             push_word();
             if (j - i >= 2) {
-                bold = !bold; // ** or __ toggles bold
+                bold = !bold;
             } else {
-                italic = !italic; // single * or _ toggles italic
+                italic = !italic;
             }
             i = j;
             continue;
         }
         if (c == '\n') {
             push_word();
-            tokens.push_back({std::string(), false, false, true});
+            tokens.push_back({std::string(), false, false, true, false, ImVec4(1, 1, 1, 1)});
             ++i;
             continue;
         }
@@ -289,11 +338,7 @@ void render_markdown(const std::string& text, const ImVec4& base) {
             ++i;
             continue;
         }
-        if (!word_open) {
-            word_open = true;
-            word_bold = bold;
-            word_italic = italic;
-        }
+        open_word();
         word += c;
         ++i;
     }
@@ -325,7 +370,8 @@ void render_markdown(const std::string& text, const ImVec4& base) {
         } else {
             cursor_x = content_start + w;
         }
-        ImGui::TextColored(t.bold ? bold_color : base, "%s", t.text.c_str());
+        const ImVec4 color = t.has_color ? t.color : (t.bold ? bold_color : base);
+        ImGui::TextColored(color, "%s", t.text.c_str());
         if (font != nullptr) {
             ImGui::PopFont();
         }
@@ -398,6 +444,81 @@ void apply_theme(const std::string& name) {
     s.FramePadding = ImVec2(8, 5);
     s.ItemSpacing = ImVec2(8, 7);
     s.WindowBorderSize = 1.0f;
+}
+
+// A bordered dice-roll panel matching the original: the roll's label, large
+// dice-face icons (animated while rolling), the per-die breakdown, the total,
+// and the target.
+void dice_panel(IconCache& icons, const oce::DiceRoll& roll, bool rolling, const ImVec4& accent) {
+    static const char* const kFaces[] = {
+        "dice-six-faces-one",  "dice-six-faces-two",  "dice-six-faces-three",
+        "dice-six-faces-four", "dice-six-faces-five", "dice-six-faces-six"};
+    ImGui::PushStyleColor(ImGuiCol_Border, accent);
+    if (ImGui::BeginChild("##dicepanel", ImVec2(0.0f, 204.0f), ImGuiChildFlags_Borders)) {
+        const ImVec4 muted = ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled);
+        auto center = [](float item_w) {
+            const float avail = ImGui::GetContentRegionAvail().x;
+            const float base = ImGui::GetCursorPosX();
+            if (item_w < avail) {
+                ImGui::SetCursorPosX(base + (avail - item_w) * 0.5f);
+            }
+        };
+        auto center_text = [&](const std::string& str, ImFont* font, const ImVec4& col) {
+            if (font != nullptr) {
+                ImGui::PushFont(font);
+            }
+            center(ImGui::CalcTextSize(str.c_str()).x);
+            ImGui::TextColored(col, "%s", str.c_str());
+            if (font != nullptr) {
+                ImGui::PopFont();
+            }
+        };
+
+        ImGui::Spacing();
+        center_text(roll.name.empty() ? "Roll" : roll.name, g_heading_font, accent);
+        ImGui::Spacing();
+
+        const int count = (rolling || roll.dice.empty()) ? 2 : (int) roll.dice.size();
+        const float die = 54.0f;
+        const float spacing = 12.0f;
+        center((float) count * die + (float) (count - 1) * spacing);
+        for (int i = 0; i < count; ++i) {
+            if (i > 0) {
+                ImGui::SameLine(0.0f, spacing);
+            }
+            int face = 0;
+            if (rolling) {
+                const long t = (long) (ImGui::GetTime() * 12.0) + (long) i * 2;
+                face = (int) (((t % 6) + 6) % 6);
+            } else {
+                const int v = roll.dice[(size_t) i];
+                face = (v >= 1 && v <= 6) ? v - 1 : 0;
+            }
+            icons.draw(kFaces[face], die, rolling ? muted : ImVec4(0.93f, 0.82f, 0.42f, 1.0f));
+        }
+        ImGui::Spacing();
+
+        if (rolling) {
+            center_text("Rolling…", g_body_font, muted);
+        } else {
+            std::string rolls = "Rolls: ";
+            for (size_t i = 0; i < roll.dice.size(); ++i) {
+                if (i != 0) {
+                    rolls += " + ";
+                }
+                rolls += std::to_string(roll.dice[i]);
+            }
+            if (roll.modifier != 0) {
+                rolls += (roll.modifier > 0 ? "  +" : "  ") + std::to_string(roll.modifier);
+            }
+            center_text(rolls, g_body_font, muted);
+            center_text("Total: " + std::to_string(roll.total), g_heading_font,
+                        roll.success ? ImVec4(0.50f, 0.85f, 0.50f, 1.0f) : accent);
+            center_text("Target: " + std::to_string(roll.target), g_body_font, muted);
+        }
+    }
+    ImGui::EndChild();
+    ImGui::PopStyleColor();
 }
 
 } // namespace
@@ -1270,7 +1391,7 @@ void GamePanels::draw_modals(oce::Engine& engine, const oce::Snapshot& s) {
     if (s.combat.active && !ImGui::IsPopupOpen("Combat")) {
         ImGui::OpenPopup("Combat");
     }
-    ImGui::SetNextWindowSize(ImVec2(520, 520), ImGuiCond_Appearing);
+    ImGui::SetNextWindowSize(ImVec2(560, 660), ImGuiCond_Appearing);
     if (ImGui::BeginPopupModal("Combat", nullptr, ImGuiWindowFlags_NoSavedSettings)) {
         if (!s.combat.active) {
             ImGui::CloseCurrentPopup();
@@ -1282,10 +1403,8 @@ void GamePanels::draw_modals(oce::Engine& engine, const oce::Snapshot& s) {
             ImGui::Text("Attack +%d    Defense %d", oce::player_attack_bonus(s.player, weapon),
                         oce::player_defense(s.player, armor));
             ImGui::Text("HP %d/%d", s.player.hp, s.player.max_hp);
-            if (s.turn_in_progress) {
-                dice_roll_indicator("Enemies act —");
-            }
             ImGui::Separator();
+            ImGui::TextDisabled("Enemies (%zu remaining)", s.combat.enemies.size());
             if (combat_target_ >= (int) s.combat.enemies.size()) {
                 combat_target_ = 0;
             }
@@ -1305,6 +1424,8 @@ void GamePanels::draw_modals(oce::Engine& engine, const oce::Snapshot& s) {
                 ImGui::PopStyleColor();
                 ImGui::PopID();
             }
+            ImGui::Spacing();
+            dice_panel(icons_, s.last_roll, s.turn_in_progress, accent_for(s.theme));
             ImGui::Spacing();
             ImGui::BeginDisabled(s.turn_in_progress);
             if (ImGui::Button("Attack")) {
@@ -1330,7 +1451,8 @@ void GamePanels::draw_modals(oce::Engine& engine, const oce::Snapshot& s) {
             }
             ImGui::EndDisabled();
             ImGui::Separator();
-            if (ImGui::BeginChild("combat_log", ImVec2(0, 0), ImGuiChildFlags_Borders)) {
+            ImGui::TextDisabled("Combat Log");
+            if (ImGui::BeginChild("combat_log", ImVec2(0, 120.0f), ImGuiChildFlags_Borders)) {
                 for (const std::string& line : s.combat.log) {
                     ImGui::TextWrapped("%s", line.c_str());
                 }
@@ -1343,32 +1465,44 @@ void GamePanels::draw_modals(oce::Engine& engine, const oce::Snapshot& s) {
         ImGui::EndPopup();
     }
 
-    // ---- Skill Check (auto-open while active) ----
-    if (s.skill_check.active && !ImGui::IsPopupOpen("Skill Check")) {
-        ImGui::OpenPopup("Skill Check");
+    // ---- Skill Check ----
+    if (s.skill_check.active && !prev_skill_active_) {
+        show_skill_ = true;
+        skill_base_seq_ = s.last_roll.seq; // baseline so we detect this check's roll
     }
-    ImGui::SetNextWindowSize(ImVec2(420, 220), ImGuiCond_Appearing);
-    if (ImGui::BeginPopupModal("Skill Check", nullptr, ImGuiWindowFlags_NoSavedSettings)) {
-        if (!s.skill_check.active) {
-            ImGui::CloseCurrentPopup();
-        } else {
-            ImGui::TextWrapped("%s", s.skill_check.description.empty()
-                                         ? "A test of skill."
-                                         : s.skill_check.description.c_str());
-            ImGui::Text("%s vs difficulty %d  (%dd6)", s.skill_check.attribute.c_str(),
-                        s.skill_check.difficulty, s.skill_check.num_dice);
-            ImGui::Spacing();
-            ImGui::BeginDisabled(s.turn_in_progress);
-            if (ImGui::Button("Roll", ImVec2(120, 0))) {
-                engine.resolve_skill_check();
+    prev_skill_active_ = s.skill_check.active;
+    if (show_skill_) {
+        ImGui::SetNextWindowSize(ImVec2(440, 440), ImGuiCond_Appearing);
+        if (ImGui::Begin("Skill Check", &show_skill_)) {
+            const bool rolled = s.last_roll.seq > skill_base_seq_;
+            if (s.skill_check.active) {
+                heading(("Skill Check: " + s.skill_check.attribute).c_str());
+                if (!s.skill_check.description.empty()) {
+                    ImGui::PushTextWrapPos(0.0f);
+                    ImGui::TextDisabled("%s", s.skill_check.description.c_str());
+                    ImGui::PopTextWrapPos();
+                }
+                ImGui::Text("%s vs difficulty %d  (%dd6)", s.skill_check.attribute.c_str(),
+                            s.skill_check.difficulty, s.skill_check.num_dice);
+            } else {
+                heading("Skill Check");
             }
-            ImGui::EndDisabled();
-            if (s.turn_in_progress) {
-                ImGui::SameLine();
-                dice_roll_indicator("");
+            ImGui::Spacing();
+            if (rolled) {
+                dice_panel(icons_, s.last_roll, false, accent_for(s.theme));
+                ImGui::Spacing();
+                if (ImGui::Button("Continue", ImVec2(140, 0))) {
+                    show_skill_ = false;
+                }
+            } else {
+                ImGui::BeginDisabled(!s.skill_check.active || s.turn_in_progress);
+                if (ImGui::Button("Roll the dice", ImVec2(160, 0))) {
+                    engine.resolve_skill_check();
+                }
+                ImGui::EndDisabled();
             }
         }
-        ImGui::EndPopup();
+        ImGui::End();
     }
 }
 

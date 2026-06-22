@@ -70,10 +70,13 @@ AttackResult resolve_attack(int attack_total, int target_defense, int damage_die
 }
 
 AttackResult player_attack(Rng& rng, const Player& player, Enemy& target, const Item* weapon) {
-    const int attack_total = rng.roll(2, 6) + player_attack_bonus(player, weapon);
+    const int d1 = rng.between(1, 6);
+    const int d2 = rng.between(1, 6);
+    const int attack_total = d1 + d2 + player_attack_bonus(player, weapon);
     const int damage_die = rng.roll(1, 6);
     const int damage_mod = modifier(player.attributes.strength);
     AttackResult r = resolve_attack(attack_total, target.defense, damage_die, damage_mod);
+    r.dice = {d1, d2};
     if (r.hit) {
         target.hp = std::max(0, target.hp - r.damage);
         r.target_defeated = target.hp <= 0;
@@ -154,7 +157,18 @@ CombatTurnResult resolve_player_action(GameState& s, Rng& rng, CombatAction acti
         }
         const size_t idx = (size_t) target_index;
         const std::string enemy_name = c.enemies[idx].name;
+        const int enemy_def = c.enemies[idx].defense;
         const AttackResult r = player_attack(rng, s.player, c.enemies[idx], weapon);
+        result.attack_made = true;
+        result.attack_dice = r.dice;
+        result.attack_total = r.total;
+        int dice_sum = 0;
+        for (int d : r.dice) {
+            dice_sum += d;
+        }
+        result.attack_modifier = r.total - dice_sum;
+        result.attack_target = enemy_def;
+        result.attack_label = "Attack: " + enemy_name + " (DEF " + std::to_string(enemy_def) + ")";
         if (!r.hit) {
             c.log.push_back("You miss " + enemy_name + ".");
         } else {

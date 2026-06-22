@@ -39,6 +39,7 @@ struct AttackResult {
     int total = 0;          // attack roll + bonus
     int damage = 0;         // damage dealt on a hit
     bool target_defeated = false;
+    std::vector<int> dice;  // individual to-hit dice (2d6)
 };
 
 // Pure resolution: a hit lands when attack_total >= target_defense; damage is
@@ -69,6 +70,13 @@ struct CombatTurnResult {
     long long xp_awarded = 0;
     int gold_awarded = 0;
     int levels_gained = 0;
+    // The player's to-hit roll this turn (when an attack was made), for the UI.
+    bool attack_made = false;
+    std::vector<int> attack_dice;
+    int attack_total = 0;
+    int attack_modifier = 0;
+    int attack_target = 0;
+    std::string attack_label;
 };
 
 // What an enemy does on its turn. Attack strikes the player; Defend forgoes the

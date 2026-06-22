@@ -17,6 +17,7 @@ struct Snapshot {
     std::vector<std::string> suggested_actions;
     CombatState combat;
     SkillCheck skill_check;
+    DiceRoll last_roll; // most recent resolved roll, for the dice panels
     WorldState world_state;
     CampaignMeta meta;          // the active campaign's framing
     std::string streaming_text; // narrative arriving during the current turn
