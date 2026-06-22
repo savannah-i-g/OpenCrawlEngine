@@ -50,3 +50,8 @@ follows [Semantic Versioning](https://semver.org/).
   free-text setting; the engine builds the character with its class attributes
   and a starting kit, resets state, and begins a fresh game-master conversation
   that builds on the setting. A New Game dialog drives it.
+- Assets and world bookkeeping: businesses accrue daily gold over elapsed game
+  time, and the full game state (inventory, equipment, businesses, relations,
+  properties, mounts, factions, NPCs, world facts, combat, and skill checks)
+  serializes to and from the save (round-trip tested). An Assets dialog lists
+  holdings, factions, and known NPCs.

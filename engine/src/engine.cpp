@@ -4,6 +4,8 @@
 #include "oce/rules/character.hpp"
 #include "oce/rules/combat.hpp"
 #include "oce/rules/skills.hpp"
+#include "oce/rules/world.hpp"
+#include "oce/serialize.hpp"
 
 #include "oce_json.h"
 #include "oce_llm.h"
@@ -24,115 +26,11 @@ namespace oce {
 namespace {
 
 std::string serialize_state(const GameState& s) {
-    oce_json* root = oce_json_new_object();
-    oce_json* p = oce_json_new_object();
-    oce_json_obj_set_str(p, "name", s.player.name.c_str());
-    oce_json_obj_set_str(p, "class", class_to_string(s.player.cls));
-    oce_json_obj_set_int(p, "level", s.player.level);
-    oce_json_obj_set_int(p, "xp", s.player.xp);
-    oce_json_obj_set_int(p, "gold", s.player.gold);
-    oce_json_obj_set_int(p, "hp", s.player.hp);
-    oce_json_obj_set_int(p, "max_hp", s.player.max_hp);
-    oce_json_obj_set_int(p, "energy", s.player.energy);
-    oce_json_obj_set_int(p, "max_energy", s.player.max_energy);
-    oce_json_obj_set_int(p, "attribute_points", s.player.attribute_points);
-    if (!s.player.background.empty()) {
-        oce_json_obj_set_str(p, "background", s.player.background.c_str());
-    }
-    oce_json* attrs = oce_json_new_object();
-    oce_json_obj_set_int(attrs, "strength", s.player.attributes.strength);
-    oce_json_obj_set_int(attrs, "dexterity", s.player.attributes.dexterity);
-    oce_json_obj_set_int(attrs, "intelligence", s.player.attributes.intelligence);
-    oce_json_obj_set_int(attrs, "constitution", s.player.attributes.constitution);
-    oce_json_obj_set_int(attrs, "wisdom", s.player.attributes.wisdom);
-    oce_json_obj_set_int(attrs, "charisma", s.player.attributes.charisma);
-    oce_json_obj_set_int(attrs, "luck", s.player.attributes.luck);
-    oce_json_obj_set_int(attrs, "perception", s.player.attributes.perception);
-    oce_json_obj_set_int(attrs, "stealth", s.player.attributes.stealth);
-    oce_json_obj_set_int(attrs, "bartering", s.player.attributes.bartering);
-    oce_json_obj_set(p, "attributes", attrs);
-    oce_json_obj_set(root, "player", p);
-
-    oce_json* story = oce_json_new_array();
-    for (const Message& m : s.story) {
-        oce_json* mo = oce_json_new_object();
-        oce_json_obj_set_str(mo, "sender", m.sender.c_str());
-        oce_json_obj_set_str(mo, "content", m.content.c_str());
-        oce_json_arr_append(story, mo);
-    }
-    oce_json_obj_set(root, "story", story);
-
-    oce_json* sa = oce_json_new_array();
-    for (const std::string& a : s.suggested_actions) {
-        oce_json_arr_append_str(sa, a.c_str());
-    }
-    oce_json_obj_set(root, "suggested_actions", sa);
-
-    char* text = oce_json_print(root, false);
-    std::string out = text ? text : "{}";
-    free(text);
-    oce_json_free(root);
-    return out;
+    return serialize_game_state(s);
 }
 
 void deserialize_state(const char* json, GameState& out) {
-    oce_json* root = oce_json_parse(json, std::strlen(json));
-    if (root == nullptr) {
-        return;
-    }
-    const oce_json* p = oce_json_get(root, "player");
-    if (oce_json_is_object(p)) {
-        out.player.name = oce_json_get_str(p, "name", "Adventurer");
-        CharacterClass cls;
-        if (class_from_string(oce_json_get_str(p, "class", "warrior"), cls)) {
-            out.player.cls = cls;
-        }
-        out.player.level = (int) oce_json_get_int(p, "level", out.player.level);
-        out.player.xp = oce_json_get_int(p, "xp", out.player.xp);
-        out.player.gold = (int) oce_json_get_int(p, "gold", out.player.gold);
-        out.player.hp = (int) oce_json_get_int(p, "hp", out.player.hp);
-        out.player.max_hp = (int) oce_json_get_int(p, "max_hp", out.player.max_hp);
-        out.player.energy = (int) oce_json_get_int(p, "energy", out.player.energy);
-        out.player.max_energy = (int) oce_json_get_int(p, "max_energy", out.player.max_energy);
-        out.player.attribute_points =
-            (int) oce_json_get_int(p, "attribute_points", out.player.attribute_points);
-        out.player.background = oce_json_get_str(p, "background", "");
-        const oce_json* attrs = oce_json_get(p, "attributes");
-        if (oce_json_is_object(attrs)) {
-            Attributes& at = out.player.attributes;
-            at.strength = (int) oce_json_get_int(attrs, "strength", at.strength);
-            at.dexterity = (int) oce_json_get_int(attrs, "dexterity", at.dexterity);
-            at.intelligence = (int) oce_json_get_int(attrs, "intelligence", at.intelligence);
-            at.constitution = (int) oce_json_get_int(attrs, "constitution", at.constitution);
-            at.wisdom = (int) oce_json_get_int(attrs, "wisdom", at.wisdom);
-            at.charisma = (int) oce_json_get_int(attrs, "charisma", at.charisma);
-            at.luck = (int) oce_json_get_int(attrs, "luck", at.luck);
-            at.perception = (int) oce_json_get_int(attrs, "perception", at.perception);
-            at.stealth = (int) oce_json_get_int(attrs, "stealth", at.stealth);
-            at.bartering = (int) oce_json_get_int(attrs, "bartering", at.bartering);
-        }
-    }
-    const oce_json* story = oce_json_get(root, "story");
-    if (oce_json_is_array(story)) {
-        out.story.clear();
-        size_t n = oce_json_arr_len(story);
-        for (size_t i = 0; i < n; ++i) {
-            const oce_json* m = oce_json_arr_at(story, i);
-            Message msg;
-            msg.sender = oce_json_get_str(m, "sender", "narrator");
-            msg.content = oce_json_get_str(m, "content", "");
-            out.story.push_back(std::move(msg));
-        }
-    }
-    const oce_json* sa = oce_json_get(root, "suggested_actions");
-    if (oce_json_is_array(sa)) {
-        out.suggested_actions.clear();
-        size_t n = oce_json_arr_len(sa);
-        for (size_t i = 0; i < n; ++i) {
-            out.suggested_actions.push_back(oce_json_as_str(oce_json_arr_at(sa, i), ""));
-        }
-    }
-    oce_json_free(root);
+    deserialize_game_state(json, out);
 }
 
 const char* env_or(const char* name, const char* fallback) {
@@ -354,10 +252,12 @@ Snapshot Engine::snapshot() {
     s.player = state_.player;
     s.inventory = state_.inventory;
     s.equipment = state_.equipment;
+    s.assets = state_.assets;
     s.story = state_.story;
     s.suggested_actions = state_.suggested_actions;
     s.combat = state_.combat;
     s.skill_check = state_.skill_check;
+    s.world_state = state_.world_state;
     s.streaming_text = streaming_text_;
     s.turn_in_progress = turn_in_progress_;
     s.status = status_;
@@ -536,6 +436,15 @@ void Engine::run_turn(const std::string& input) {
         }
         if (llm_ != nullptr) {
             total_tokens_ = oce_llm_total_usage(llm_).total_tokens;
+        }
+        int income = 0;
+        for (Business& b : state_.assets.businesses) {
+            income += collect_business_income(b, state_.world_state.time_elapsed);
+        }
+        if (income > 0) {
+            state_.player.gold += income;
+            state_.story.push_back(
+                Message{"system", "Your holdings bring in " + std::to_string(income) + " gold.", 0});
         }
         turn_in_progress_ = false;
     }

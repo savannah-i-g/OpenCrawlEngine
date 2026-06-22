@@ -26,6 +26,9 @@ void GamePanels::draw(oce::Engine& engine) {
             if (ImGui::MenuItem("New Game...")) {
                 show_new_game_ = true;
             }
+            if (ImGui::MenuItem("Assets...")) {
+                show_assets_ = true;
+            }
             if (ImGui::MenuItem("Settings...")) {
                 show_settings_ = true;
             }
@@ -189,6 +192,47 @@ void GamePanels::draw(oce::Engine& engine) {
                 p.world_prompt = new_world_;
                 engine.new_game(p);
                 show_new_game_ = false;
+            }
+        }
+        ImGui::End();
+    }
+
+    // Assets.
+    if (show_assets_) {
+        if (ImGui::Begin("Assets", &show_assets_)) {
+            if (ImGui::CollapsingHeader("Businesses")) {
+                for (const oce::Business& b : s.assets.businesses) {
+                    ImGui::BulletText("%s — %d gold/day", b.name.c_str(), b.income_per_day);
+                }
+            }
+            if (ImGui::CollapsingHeader("Relations")) {
+                for (const oce::Relation& r : s.assets.relations) {
+                    ImGui::BulletText("%s (%s, %d)", r.npc_name.c_str(), r.type.c_str(), r.strength);
+                }
+            }
+            if (ImGui::CollapsingHeader("Properties")) {
+                for (const oce::Property& p : s.assets.properties) {
+                    ImGui::BulletText("%s (%s)", p.name.c_str(), p.type.c_str());
+                }
+            }
+            if (ImGui::CollapsingHeader("Mounts")) {
+                for (const oce::MountVehicle& m : s.assets.mounts) {
+                    ImGui::BulletText("%s (%s) — condition %d", m.name.c_str(), m.type.c_str(),
+                                      m.condition);
+                }
+            }
+            if (ImGui::CollapsingHeader("Factions")) {
+                for (const auto& kv : s.world_state.factions) {
+                    const oce::Faction& f = kv.second;
+                    ImGui::BulletText("%s — standing %d, reputation %d", f.name.c_str(),
+                                      f.relationship, f.reputation);
+                }
+            }
+            if (ImGui::CollapsingHeader("Known NPCs")) {
+                for (const auto& kv : s.world_state.known_npcs) {
+                    const oce::NPC& n = kv.second;
+                    ImGui::BulletText("%s — %s", n.name.c_str(), n.location.c_str());
+                }
             }
         }
         ImGui::End();
