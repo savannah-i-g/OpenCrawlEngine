@@ -143,6 +143,117 @@ const char* sender_icon(const std::string& sender) {
     return "pointy-hat"; // narrator
 }
 
+const char* business_type_label(oce::BusinessType t) {
+    switch (t) {
+        case oce::BusinessType::Tavern:
+            return "Tavern";
+        case oce::BusinessType::Shop:
+            return "Shop";
+        case oce::BusinessType::Farm:
+            return "Farm";
+        case oce::BusinessType::Mine:
+            return "Mine";
+        case oce::BusinessType::TradingCompany:
+            return "Trading Company";
+        case oce::BusinessType::MercenaryGuild:
+            return "Mercenary Guild";
+        case oce::BusinessType::Workshop:
+            return "Workshop";
+        case oce::BusinessType::Other:
+            return "Other";
+    }
+    return "Other";
+}
+
+const char* business_type_icon(oce::BusinessType t) {
+    switch (t) {
+        case oce::BusinessType::Tavern:
+            return "campfire";
+        case oce::BusinessType::Shop:
+            return "shop";
+        case oce::BusinessType::Farm:
+            return "wheat";
+        case oce::BusinessType::Mine:
+            return "anvil";
+        case oce::BusinessType::TradingCompany:
+            return "cash";
+        case oce::BusinessType::MercenaryGuild:
+            return "crossed-swords";
+        case oce::BusinessType::Workshop:
+            return "anvil";
+        case oce::BusinessType::Other:
+            return "briefcase";
+    }
+    return "briefcase";
+}
+
+const char* faction_type_label(oce::FactionType t) {
+    switch (t) {
+        case oce::FactionType::Guild:
+            return "Guild";
+        case oce::FactionType::Kingdom:
+            return "Kingdom";
+        case oce::FactionType::Clan:
+            return "Clan";
+        case oce::FactionType::Cult:
+            return "Cult";
+        case oce::FactionType::MerchantCompany:
+            return "Merchant Company";
+        case oce::FactionType::Military:
+            return "Military";
+        case oce::FactionType::Religious:
+            return "Religious";
+        case oce::FactionType::Criminal:
+            return "Criminal";
+        case oce::FactionType::Other:
+            return "Other";
+    }
+    return "Other";
+}
+
+const char* faction_type_icon(oce::FactionType t) {
+    switch (t) {
+        case oce::FactionType::Guild:
+            return "briefcase";
+        case oce::FactionType::Kingdom:
+            return "castle";
+        case oce::FactionType::Clan:
+            return "swords-emblem";
+        case oce::FactionType::Cult:
+            return "pentacle";
+        case oce::FactionType::MerchantCompany:
+            return "coins-pile";
+        case oce::FactionType::Military:
+            return "crossed-swords";
+        case oce::FactionType::Religious:
+            return "temple-gate";
+        case oce::FactionType::Criminal:
+            return "hooded-figure";
+        case oce::FactionType::Other:
+            return "crossed-swords";
+    }
+    return "crossed-swords";
+}
+
+// A small framed "badge" label (e.g. a type tag on a card).
+void badge(const char* text, const ImVec4& col) {
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(col.x, col.y, col.z, 0.18f));
+    ImGui::PushStyleColor(ImGuiCol_Text, col);
+    ImGui::SmallButton(text);
+    ImGui::PopStyleColor(2);
+}
+
+// A standing/relationship bar (-100..100) drawn as a thin colored meter.
+void standing_bar(int value) {
+    const float frac = (float) (value + 100) / 200.0f;
+    const ImVec4 col = value >= 25    ? ImVec4(0.46f, 0.80f, 0.42f, 1.0f)
+                       : value <= -25 ? ImVec4(0.85f, 0.34f, 0.31f, 1.0f)
+                                      : ImVec4(0.70f, 0.66f, 0.45f, 1.0f);
+    ImGui::PushStyleColor(ImGuiCol_PlotHistogram, col);
+    ImGui::ProgressBar(frac, ImVec2(-1.0f, 10.0f), "");
+    ImGui::PopStyleColor();
+}
+
 struct AttrInfo {
     const char* key;
     const char* label;
@@ -536,7 +647,14 @@ GamePanels::GamePanels() {
     camp_custom_[0] = '\0';
     wp_custom_[0] = '\0';
     gm_item_name_[0] = '\0';
+    gm_item_desc_[0] = '\0';
+    gm_mount_name_[0] = '\0';
+    gm_mount_type_[0] = '\0';
+    gm_mount_desc_[0] = '\0';
     gm_faction_[0] = '\0';
+    gm_prop_name_[0] = '\0';
+    gm_prop_location_[0] = '\0';
+    gm_prop_desc_[0] = '\0';
     std::snprintf(new_name_, sizeof new_name_, "%s", "Adventurer");
     std::snprintf(camp_name_, sizeof camp_name_, "%s", "Adventure");
 }
@@ -1079,65 +1197,153 @@ void GamePanels::draw_modals(oce::Engine& engine, const oce::Snapshot& s) {
 
     // ---- Assets & Relations ----
     if (show_assets_) {
-        ImGui::SetNextWindowSize(ImVec2(620, 520), ImGuiCond_Appearing);
+        const ImVec4 acc = accent_for(s.theme);
+        int biz_value = 0;
+        int prop_value = 0;
+        int daily = 0;
+        int pending = 0;
+        for (const oce::Business& b : s.assets.businesses) {
+            biz_value += b.value;
+            daily += b.income_per_day;
+            pending += oce::pending_business_income(b, s.world_state.time_elapsed);
+        }
+        for (const oce::Property& p : s.assets.properties) {
+            prop_value += p.value;
+        }
+        ImGui::SetNextWindowSize(ImVec2(700, 600), ImGuiCond_Appearing);
         if (ImGui::Begin("Assets & Relations", &show_assets_)) {
-            int pending = 0;
-            for (const oce::Business& b : s.assets.businesses) {
-                pending += oce::pending_business_income(b, s.world_state.time_elapsed);
-            }
-            ImGui::BeginDisabled(s.turn_in_progress || pending <= 0);
-            if (ImGui::Button("Collect income")) {
-                engine.collect_income();
-            }
-            ImGui::EndDisabled();
+            ImGui::TextDisabled("Manage your businesses, properties, mounts, and key "
+                                "relationships.");
+            auto summary = [&](const char* label, const std::string& value, const char* icon) {
+                ImGui::BeginChild(label, ImVec2(ImGui::GetContentRegionAvail().x / 3.0f - 6.0f, 60.0f),
+                                  ImGuiChildFlags_Borders);
+                icons_.draw(icon, 16.0f, acc);
+                ImGui::SameLine(0.0f, 6.0f);
+                ImGui::TextDisabled("%s", label);
+                if (g_heading_font != nullptr) {
+                    ImGui::PushFont(g_heading_font);
+                }
+                ImGui::TextColored(acc, "%s", value.c_str());
+                if (g_heading_font != nullptr) {
+                    ImGui::PopFont();
+                }
+                ImGui::EndChild();
+            };
+            summary("Business Value", std::to_string(biz_value) + " gold", "briefcase");
             ImGui::SameLine();
-            ImGui::TextDisabled("accrued: %d gold", pending);
+            summary("Property Value", std::to_string(prop_value) + " gold", "castle");
             ImGui::SameLine();
-            ImGui::BeginDisabled(s.turn_in_progress);
-            if (ImGui::Button("Acquire mount")) {
-                engine.acquire_mount();
-            }
-            ImGui::EndDisabled();
+            summary("Daily Income", "+" + std::to_string(daily) + "/day", "two-coins");
+            ImGui::Spacing();
+
+            const auto card_begin = [](const char* id) {
+                ImGui::BeginChild(id, ImVec2(0.0f, 0.0f),
+                                  ImGuiChildFlags_Borders | ImGuiChildFlags_AutoResizeY);
+            };
+            const auto wrap_desc = [](const std::string& d) {
+                if (!d.empty()) {
+                    ImGui::PushTextWrapPos(0.0f);
+                    ImGui::TextDisabled("%s", d.c_str());
+                    ImGui::PopTextWrapPos();
+                }
+            };
 
             if (ImGui::BeginTabBar("assets_tabs")) {
-                if (ImGui::BeginTabItem("Businesses")) {
+                if (ImGui::BeginTabItem(
+                        ("Businesses (" + std::to_string(s.assets.businesses.size()) + ")###biz")
+                            .c_str())) {
+                    ImGui::BeginDisabled(s.turn_in_progress || pending <= 0);
+                    if (ImGui::Button("Collect income")) {
+                        engine.collect_income();
+                    }
+                    ImGui::EndDisabled();
+                    ImGui::SameLine();
+                    ImGui::TextDisabled("accrued: %d gold", pending);
                     for (const oce::Business& b : s.assets.businesses) {
-                        ImGui::BulletText("%s — %d gold/day", b.name.c_str(), b.income_per_day);
+                        ImGui::PushID(b.id.c_str());
+                        card_begin("c");
+                        icons_.draw(business_type_icon(b.type), 22.0f, acc);
+                        ImGui::SameLine();
+                        ImGui::TextColored(acc, "%s", b.name.c_str());
+                        ImGui::SameLine();
+                        badge(business_type_label(b.type), acc);
+                        wrap_desc(b.description);
+                        ImGui::Text("Location: %s", b.location.empty() ? "—" : b.location.c_str());
+                        ImGui::Text("Value: %d gold     Income: +%d/day", b.value, b.income_per_day);
+                        ImGui::EndChild();
+                        ImGui::PopID();
                     }
                     if (s.assets.businesses.empty()) {
-                        ImGui::TextDisabled("None yet.");
+                        ImGui::TextDisabled("No businesses yet.");
                     }
                     ImGui::EndTabItem();
                 }
-                if (ImGui::BeginTabItem("Properties")) {
+                if (ImGui::BeginTabItem(
+                        ("Properties (" + std::to_string(s.assets.properties.size()) + ")###prop")
+                            .c_str())) {
                     for (const oce::Property& p : s.assets.properties) {
-                        ImGui::BulletText("%s (%s)", p.name.c_str(), p.type.c_str());
+                        ImGui::PushID(p.id.c_str());
+                        card_begin("c");
+                        icons_.draw("castle", 22.0f, acc);
+                        ImGui::SameLine();
+                        ImGui::TextColored(acc, "%s", p.name.c_str());
+                        ImGui::SameLine();
+                        badge(p.type.empty() ? "property" : p.type.c_str(), acc);
+                        wrap_desc(p.description);
+                        ImGui::Text("Location: %s", p.location.empty() ? "—" : p.location.c_str());
+                        ImGui::Text("Value: %d gold", p.value);
+                        ImGui::EndChild();
+                        ImGui::PopID();
                     }
                     if (s.assets.properties.empty()) {
-                        ImGui::TextDisabled("None yet.");
+                        ImGui::TextDisabled("No properties yet.");
                     }
                     ImGui::EndTabItem();
                 }
-                if (ImGui::BeginTabItem("Mounts")) {
+                if (ImGui::BeginTabItem(
+                        ("Mounts (" + std::to_string(s.assets.mounts.size()) + ")###mnt").c_str())) {
+                    ImGui::BeginDisabled(s.turn_in_progress);
+                    if (ImGui::Button("Acquire a mount")) {
+                        engine.acquire_mount();
+                    }
+                    ImGui::EndDisabled();
                     for (const oce::MountVehicle& m : s.assets.mounts) {
-                        icons_.draw("horse-head", 18.0f, ImGui::GetStyleColorVec4(ImGuiCol_Text));
-                        ImGui::SameLine(0.0f, 6.0f);
-                        ImGui::Text("%s (%s) — condition %d", m.name.c_str(), m.type.c_str(),
-                                    m.condition);
-                        if (ImGui::IsItemHovered() && !m.description.empty()) {
-                            ImGui::SetTooltip("%s", m.description.c_str());
-                        }
+                        ImGui::PushID(m.id.c_str());
+                        card_begin("c");
+                        icons_.draw("horse-head", 22.0f, acc);
+                        ImGui::SameLine();
+                        ImGui::TextColored(acc, "%s", m.name.c_str());
+                        ImGui::SameLine();
+                        badge(m.type.empty() ? "mount" : m.type.c_str(), acc);
+                        wrap_desc(m.description);
+                        ImGui::Text("Speed x%.1f     Capacity %d     Upkeep %d/day", m.speed,
+                                    m.capacity, m.upkeep_cost);
+                        ImGui::Text("Condition");
+                        ImGui::SameLine();
+                        ImGui::PushStyleColor(ImGuiCol_PlotHistogram, acc);
+                        ImGui::ProgressBar((float) m.condition / 100.0f, ImVec2(-1.0f, 10.0f), "");
+                        ImGui::PopStyleColor();
+                        ImGui::EndChild();
+                        ImGui::PopID();
                     }
                     if (s.assets.mounts.empty()) {
-                        ImGui::TextDisabled("None yet.");
+                        ImGui::TextDisabled("No mounts yet.");
                     }
                     ImGui::EndTabItem();
                 }
-                if (ImGui::BeginTabItem("Relations")) {
+                if (ImGui::BeginTabItem(
+                        ("Relations (" + std::to_string(s.assets.relations.size()) + ")###rel")
+                            .c_str())) {
                     for (const oce::Relation& r : s.assets.relations) {
-                        ImGui::BulletText("%s (%s, %d)", r.npc_name.c_str(), r.type.c_str(),
-                                          r.strength);
-                        ImGui::Indent();
+                        ImGui::PushID(r.id.c_str());
+                        card_begin("c");
+                        icons_.draw(r.strength >= 0 ? "hearts" : "sword-clash", 22.0f, acc);
+                        ImGui::SameLine();
+                        ImGui::TextColored(acc, "%s", r.npc_name.c_str());
+                        ImGui::SameLine();
+                        badge(r.type.empty() ? "acquaintance" : r.type.c_str(), acc);
+                        wrap_desc(r.description);
+                        standing_bar(r.strength);
                         if (r.strength >= 25) {
                             for (const std::string& ben : r.benefits) {
                                 ImGui::TextDisabled("• %s", ben.c_str());
@@ -1145,23 +1351,35 @@ void GamePanels::draw_modals(oce::Engine& engine, const oce::Snapshot& s) {
                         } else if (!r.benefits.empty()) {
                             ImGui::TextDisabled("(benefits unlock as the bond strengthens)");
                         }
-                        ImGui::Unindent();
+                        ImGui::EndChild();
+                        ImGui::PopID();
                     }
                     if (s.assets.relations.empty()) {
-                        ImGui::TextDisabled("None yet.");
+                        ImGui::TextDisabled("No relationships yet.");
                     }
                     ImGui::EndTabItem();
                 }
-                if (ImGui::BeginTabItem("Factions")) {
+                if (ImGui::BeginTabItem(
+                        ("Factions (" + std::to_string(s.world_state.factions.size()) + ")###fac")
+                            .c_str())) {
                     for (const auto& kv : s.world_state.factions) {
                         const oce::Faction& f = kv.second;
-                        icons_.draw("crossed-swords", 18.0f, ImGui::GetStyleColorVec4(ImGuiCol_Text));
-                        ImGui::SameLine(0.0f, 6.0f);
-                        ImGui::Text("%s — standing %d, reputation %d", f.name.c_str(),
-                                    f.relationship, f.reputation);
-                        ImGui::Indent();
+                        ImGui::PushID(f.id.c_str());
+                        card_begin("c");
+                        icons_.draw(faction_type_icon(f.type), 22.0f, acc);
+                        ImGui::SameLine();
+                        ImGui::TextColored(acc, "%s", f.name.c_str());
+                        ImGui::SameLine();
+                        badge(faction_type_label(f.type), acc);
+                        wrap_desc(f.description);
+                        standing_bar(f.relationship);
+                        ImGui::Text("Standing: %d     Reputation: %d/1000", f.relationship,
+                                    f.reputation);
                         if (!f.territory.empty()) {
-                            ImGui::TextDisabled("Territory: %s", f.territory.c_str());
+                            ImGui::Text("Territory: %s", f.territory.c_str());
+                        }
+                        if (!f.leader.empty()) {
+                            ImGui::Text("Leader: %s", f.leader.c_str());
                         }
                         if (f.relationship >= 25) {
                             for (const std::string& ben : f.benefits) {
@@ -1170,10 +1388,11 @@ void GamePanels::draw_modals(oce::Engine& engine, const oce::Snapshot& s) {
                         } else if (!f.benefits.empty()) {
                             ImGui::TextDisabled("(benefits unlock at standing 25+)");
                         }
-                        ImGui::Unindent();
+                        ImGui::EndChild();
+                        ImGui::PopID();
                     }
                     if (s.world_state.factions.empty()) {
-                        ImGui::TextDisabled("None discovered yet.");
+                        ImGui::TextDisabled("No factions discovered yet.");
                     }
                     ImGui::EndTabItem();
                 }
@@ -1339,49 +1558,243 @@ void GamePanels::draw_modals(oce::Engine& engine, const oce::Snapshot& s) {
 
     // ---- Game Master Tools ----
     if (show_gm_) {
-        ImGui::SetNextWindowSize(ImVec2(420, 380), ImGuiCond_Appearing);
+        const ImVec4 gm_accent = accent_for(s.theme);
+        const char* types[] = {"weapon", "armor", "potion"};
+        const char* rars[] = {"common", "uncommon", "rare", "epic", "legendary"};
+        const char* slots[] = {"hand", "body", "consumable"};
+        const char* ptypes[] = {"house", "estate", "castle", "hideout", "tower", "ship", "other"};
+        const std::vector<std::string>& icon_names = icons_.names();
+        ImGui::SetNextWindowSize(ImVec2(660, 600), ImGuiCond_Appearing);
         if (ImGui::Begin("Game Master Tools", &show_gm_)) {
-            ImGui::TextDisabled("Apply effects directly (debug).");
-            ImGui::SeparatorText("Loot");
-            ImGui::InputText("Item name", gm_item_name_, sizeof gm_item_name_);
-            const char* types[] = {"weapon", "armor", "potion"};
-            const char* rars[] = {"common", "uncommon", "rare", "epic", "legendary"};
-            ImGui::Combo("Type", &gm_item_type_, types, 3);
-            ImGui::Combo("Rarity", &gm_item_rarity_, rars, 5);
-            ImGui::SliderInt("Power", &gm_item_power_, 0, 50);
-            if (ImGui::Button("Add item") && gm_item_name_[0] != '\0') {
-                char json[256];
-                std::snprintf(json, sizeof json,
-                              "{\"name\":\"%s\",\"type\":\"%s\",\"rarity\":\"%s\",\"power\":%d}",
-                              gm_item_name_, types[gm_item_type_], rars[gm_item_rarity_],
-                              gm_item_power_);
-                engine.apply_gm_tool("add_item", json);
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Add random item")) {
-                engine.apply_gm_tool("add_random_item", "{}");
-            }
-            ImGui::SeparatorText("Grant");
-            ImGui::SliderInt("Gold", &gm_gold_, 0, 1000);
-            ImGui::SliderInt("XP", &gm_xp_, 0, 1000);
-            if (ImGui::Button("Grant gold/xp")) {
-                char json[96];
-                std::snprintf(json, sizeof json, "{\"gold\":%d,\"xp\":%d}", gm_gold_, gm_xp_);
-                engine.apply_gm_tool("apply_stat_changes", json);
-            }
-            ImGui::SeparatorText("Faction");
-            ImGui::InputText("Faction name", gm_faction_, sizeof gm_faction_);
-            ImGui::SliderInt("Standing", &gm_faction_rel_, -100, 100);
-            if (ImGui::Button("Add faction") && gm_faction_[0] != '\0') {
-                std::string id = gm_faction_;
-                for (char& ch : id) {
-                    ch = (ch == ' ') ? '-' : (char) std::tolower((unsigned char) ch);
+            ImGui::TextDisabled("Manually add, edit, or remove game elements. "
+                                "Changes take effect immediately.");
+            if (ImGui::BeginTabBar("gm_tabs")) {
+                if (ImGui::BeginTabItem("Items")) {
+                    ImGui::SeparatorText("Add New Item");
+                    ImGui::InputText("Name##gmi", gm_item_name_, sizeof gm_item_name_);
+                    if (gm_item_icon_ >= (int) icon_names.size()) {
+                        gm_item_icon_ = 0;
+                    }
+                    if (!icon_names.empty()) {
+                        icons_.draw(icon_names[(size_t) gm_item_icon_], 22.0f, gm_accent);
+                        ImGui::SameLine();
+                        if (ImGui::BeginCombo("Icon##gmi", icon_names[(size_t) gm_item_icon_].c_str())) {
+                            for (int i = 0; i < (int) icon_names.size(); ++i) {
+                                ImGui::PushID(i);
+                                icons_.draw(icon_names[(size_t) i], 18.0f, gm_accent);
+                                ImGui::SameLine();
+                                if (ImGui::Selectable(icon_names[(size_t) i].c_str(),
+                                                      gm_item_icon_ == i)) {
+                                    gm_item_icon_ = i;
+                                }
+                                ImGui::PopID();
+                            }
+                            ImGui::EndCombo();
+                        }
+                    }
+                    ImGui::Combo("Type##gmi", &gm_item_type_, types, 3);
+                    ImGui::Combo("Rarity##gmi", &gm_item_rarity_, rars, 5);
+                    ImGui::Combo("Slot##gmi", &gm_item_slot_, slots, 3);
+                    ImGui::SliderInt("Power##gmi", &gm_item_power_, 1, 20);
+                    ImGui::InputTextMultiline("Description##gmi", gm_item_desc_, sizeof gm_item_desc_,
+                                              ImVec2(-1.0f, 48.0f));
+                    if (ImGui::Button("Add Item", ImVec2(150, 0)) && gm_item_name_[0] != '\0') {
+                        char json[640];
+                        std::snprintf(json, sizeof json,
+                                      "{\"name\":\"%s\",\"type\":\"%s\",\"rarity\":\"%s\",\"slot\":"
+                                      "\"%s\",\"power\":%d,\"description\":\"%s\",\"icon\":\"%s\"}",
+                                      gm_item_name_, types[gm_item_type_], rars[gm_item_rarity_],
+                                      slots[gm_item_slot_], gm_item_power_, gm_item_desc_,
+                                      icon_names.empty() ? ""
+                                                         : icon_names[(size_t) gm_item_icon_].c_str());
+                        engine.apply_gm_tool("add_item", json);
+                        gm_item_name_[0] = '\0';
+                        gm_item_desc_[0] = '\0';
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::Button("Add Random")) {
+                        engine.apply_gm_tool("add_random_item", "{}");
+                    }
+                    ImGui::Spacing();
+                    ImGui::SeparatorText(
+                        ("Current Items (" + std::to_string(s.inventory.size()) + ")").c_str());
+                    for (size_t i = 0; i < s.inventory.size(); ++i) {
+                        const oce::Item& it = s.inventory[i];
+                        ImGui::PushID((int) i);
+                        const char* ic = (!it.icon.empty() && icons_.has(it.icon))
+                                             ? it.icon.c_str()
+                                             : kind_icon(it.kind);
+                        icons_.draw(ic, 18.0f, rarity_color(it.rarity));
+                        ImGui::SameLine();
+                        ImGui::TextColored(rarity_color(it.rarity), "%s", it.name.c_str());
+                        ImGui::SameLine();
+                        ImGui::TextDisabled("(%s %s)", rarity_label(it.rarity), kind_label(it.kind));
+                        ImGui::SameLine(ImGui::GetContentRegionAvail().x - 22.0f);
+                        if (ImGui::SmallButton("x")) {
+                            char json[96];
+                            std::snprintf(json, sizeof json, "{\"item_id\":\"%s\"}", it.id.c_str());
+                            engine.apply_gm_tool("remove_item", json);
+                            ImGui::PopID();
+                            break;
+                        }
+                        ImGui::PopID();
+                    }
+                    ImGui::EndTabItem();
                 }
-                char json[256];
-                std::snprintf(json, sizeof json,
-                              "{\"faction_id\":\"%s\",\"name\":\"%s\",\"relationship_change\":%d}",
-                              id.c_str(), gm_faction_, gm_faction_rel_);
-                engine.apply_gm_tool("change_faction", json);
+                if (ImGui::BeginTabItem("Mounts")) {
+                    ImGui::SeparatorText("Add New Mount");
+                    ImGui::InputText("Name##gmm", gm_mount_name_, sizeof gm_mount_name_);
+                    ImGui::InputText("Type##gmm", gm_mount_type_, sizeof gm_mount_type_);
+                    ImGui::InputTextMultiline("Description##gmm", gm_mount_desc_,
+                                              sizeof gm_mount_desc_, ImVec2(-1.0f, 40.0f));
+                    ImGui::SliderInt("Speed x10##gmm", &gm_mount_speed_, 5, 50);
+                    ImGui::SliderInt("Capacity##gmm", &gm_mount_capacity_, 0, 100);
+                    ImGui::SliderInt("Upkeep##gmm", &gm_mount_upkeep_, 0, 50);
+                    if (ImGui::Button("Add Mount", ImVec2(150, 0)) && gm_mount_name_[0] != '\0') {
+                        char json[640];
+                        std::snprintf(json, sizeof json,
+                                      "{\"name\":\"%s\",\"type\":\"%s\",\"description\":\"%s\","
+                                      "\"speed\":%.1f,\"capacity\":%d,\"upkeep_cost\":%d}",
+                                      gm_mount_name_, gm_mount_type_[0] ? gm_mount_type_ : "horse",
+                                      gm_mount_desc_, (double) gm_mount_speed_ / 10.0,
+                                      gm_mount_capacity_, gm_mount_upkeep_);
+                        engine.apply_gm_tool("add_mount", json);
+                        gm_mount_name_[0] = '\0';
+                        gm_mount_desc_[0] = '\0';
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::Button("Acquire (roster)")) {
+                        engine.acquire_mount();
+                    }
+                    ImGui::Spacing();
+                    ImGui::SeparatorText(
+                        ("Current Mounts (" + std::to_string(s.assets.mounts.size()) + ")").c_str());
+                    for (size_t i = 0; i < s.assets.mounts.size(); ++i) {
+                        const oce::MountVehicle& m = s.assets.mounts[i];
+                        ImGui::PushID((int) i);
+                        icons_.draw("horse-head", 18.0f, gm_accent);
+                        ImGui::SameLine();
+                        ImGui::Text("%s (%s) — condition %d", m.name.c_str(), m.type.c_str(),
+                                    m.condition);
+                        ImGui::SameLine(ImGui::GetContentRegionAvail().x - 22.0f);
+                        if (ImGui::SmallButton("x")) {
+                            char json[96];
+                            std::snprintf(json, sizeof json, "{\"mount_id\":\"%s\"}", m.id.c_str());
+                            engine.apply_gm_tool("remove_mount", json);
+                            ImGui::PopID();
+                            break;
+                        }
+                        ImGui::PopID();
+                    }
+                    ImGui::EndTabItem();
+                }
+                if (ImGui::BeginTabItem("Factions")) {
+                    ImGui::SeparatorText("Add / Adjust Faction");
+                    ImGui::InputText("Name##gmf", gm_faction_, sizeof gm_faction_);
+                    ImGui::SliderInt("Relationship##gmf", &gm_faction_rel_, -100, 100);
+                    ImGui::SliderInt("Reputation##gmf", &gm_faction_rep_, 0, 1000);
+                    if (ImGui::Button("Apply Faction", ImVec2(150, 0)) && gm_faction_[0] != '\0') {
+                        std::string id = gm_faction_;
+                        for (char& ch : id) {
+                            ch = (ch == ' ') ? '-' : (char) std::tolower((unsigned char) ch);
+                        }
+                        char json[256];
+                        std::snprintf(json, sizeof json,
+                                      "{\"faction_id\":\"%s\",\"name\":\"%s\",\"relationship_"
+                                      "change\":%d,\"reputation_change\":%d}",
+                                      id.c_str(), gm_faction_, gm_faction_rel_, gm_faction_rep_);
+                        engine.apply_gm_tool("change_faction", json);
+                    }
+                    ImGui::Spacing();
+                    ImGui::SeparatorText(
+                        ("Current Factions (" + std::to_string(s.world_state.factions.size()) + ")")
+                            .c_str());
+                    for (const auto& kv : s.world_state.factions) {
+                        const oce::Faction& f = kv.second;
+                        icons_.draw("crossed-swords", 18.0f, gm_accent);
+                        ImGui::SameLine();
+                        ImGui::Text("%s — standing %d, reputation %d", f.name.c_str(),
+                                    f.relationship, f.reputation);
+                    }
+                    ImGui::EndTabItem();
+                }
+                if (ImGui::BeginTabItem("Properties")) {
+                    ImGui::SeparatorText("Add New Property");
+                    ImGui::InputText("Name##gmp", gm_prop_name_, sizeof gm_prop_name_);
+                    ImGui::Combo("Type##gmp", &gm_prop_type_, ptypes, 7);
+                    ImGui::InputText("Location##gmp", gm_prop_location_, sizeof gm_prop_location_);
+                    ImGui::SliderInt("Value##gmp", &gm_prop_value_, 0, 100000);
+                    ImGui::InputTextMultiline("Description##gmp", gm_prop_desc_, sizeof gm_prop_desc_,
+                                              ImVec2(-1.0f, 40.0f));
+                    if (ImGui::Button("Add Property", ImVec2(150, 0)) && gm_prop_name_[0] != '\0') {
+                        char json[640];
+                        std::snprintf(json, sizeof json,
+                                      "{\"name\":\"%s\",\"type\":\"%s\",\"location\":\"%s\","
+                                      "\"value\":%d,\"description\":\"%s\"}",
+                                      gm_prop_name_, ptypes[gm_prop_type_], gm_prop_location_,
+                                      gm_prop_value_, gm_prop_desc_);
+                        engine.apply_gm_tool("add_property", json);
+                        gm_prop_name_[0] = '\0';
+                        gm_prop_location_[0] = '\0';
+                        gm_prop_desc_[0] = '\0';
+                    }
+                    ImGui::Spacing();
+                    ImGui::SeparatorText(
+                        ("Current Properties (" + std::to_string(s.assets.properties.size()) + ")")
+                            .c_str());
+                    for (size_t i = 0; i < s.assets.properties.size(); ++i) {
+                        const oce::Property& p = s.assets.properties[i];
+                        ImGui::PushID((int) i);
+                        icons_.draw("castle", 18.0f, gm_accent);
+                        ImGui::SameLine();
+                        ImGui::Text("%s (%s) — %d gold", p.name.c_str(), p.type.c_str(), p.value);
+                        ImGui::SameLine(ImGui::GetContentRegionAvail().x - 22.0f);
+                        if (ImGui::SmallButton("x")) {
+                            char json[96];
+                            std::snprintf(json, sizeof json, "{\"property_id\":\"%s\"}",
+                                          p.id.c_str());
+                            engine.apply_gm_tool("remove_property", json);
+                            ImGui::PopID();
+                            break;
+                        }
+                        ImGui::PopID();
+                    }
+                    ImGui::EndTabItem();
+                }
+                if (ImGui::BeginTabItem("Stats")) {
+                    ImGui::SeparatorText("Grant / Adjust");
+                    ImGui::SliderInt("Gold +/-##gms", &gm_gold_, -500, 500);
+                    ImGui::SliderInt("XP +##gms", &gm_xp_, 0, 1000);
+                    ImGui::SliderInt("HP +/-##gms", &gm_hp_, -50, 50);
+                    ImGui::SliderInt("Energy +/-##gms", &gm_energy_, -50, 50);
+                    if (ImGui::Button("Apply Stats", ImVec2(150, 0))) {
+                        char json[160];
+                        std::snprintf(json, sizeof json,
+                                      "{\"gold\":%d,\"xp\":%d,\"hp\":%d,\"energy\":%d}", gm_gold_,
+                                      gm_xp_, gm_hp_, gm_energy_);
+                        engine.apply_gm_tool("apply_stat_changes", json);
+                    }
+                    ImGui::Spacing();
+                    ImGui::SeparatorText("Attributes");
+                    for (int i = 0; i < 10; ++i) {
+                        const AttrInfo& a = kAttrs[i];
+                        icons_.draw(a.icon, 16.0f, a.color);
+                        ImGui::SameLine(0.0f, 5.0f);
+                        ImGui::Text("%-13s %d", a.label,
+                                    oce::attribute_value(s.player.attributes, a.key));
+                        if (s.player.attribute_points > 0) {
+                            ImGui::SameLine();
+                            ImGui::PushID(a.key);
+                            if (ImGui::SmallButton("+")) {
+                                engine.allocate_attribute(a.key);
+                            }
+                            ImGui::PopID();
+                        }
+                    }
+                    ImGui::TextDisabled("Unspent points: %d", s.player.attribute_points);
+                    ImGui::EndTabItem();
+                }
+                ImGui::EndTabBar();
             }
         }
         ImGui::End();

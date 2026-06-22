@@ -7,6 +7,7 @@
 
 #include <GL/gl.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <filesystem>
 #include <vector>
@@ -52,6 +53,7 @@ void IconCache::load_one(const std::string& name, const std::string& path, void*
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, kRasterSize, kRasterSize, 0, GL_RGBA, GL_UNSIGNED_BYTE,
                  rgba.data());
     textures_[name] = (ImTextureID) tex;
+    names_.push_back(name);
 }
 
 void IconCache::ensure_loaded() {
@@ -74,6 +76,7 @@ void IconCache::ensure_loaded() {
         }
     }
     nsvgDeleteRasterizer(rast);
+    std::sort(names_.begin(), names_.end());
     std::fprintf(stderr, "IconCache: loaded %zu icons from %s\n", textures_.size(),
                  (std::filesystem::path(OCE_ASSET_DIR) / "icons").c_str());
 }

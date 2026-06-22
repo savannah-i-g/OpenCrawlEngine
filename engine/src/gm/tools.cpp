@@ -314,6 +314,34 @@ std::string remove_item(GameState& s, const oce_json* args, Rng&) {
     return kOk;
 }
 
+std::string remove_mount(GameState& s, const oce_json* args, Rng&) {
+    if (!oce_json_is_object(args)) {
+        return err("invalid arguments");
+    }
+    const std::string id = oce_json_get_str(args, "mount_id", "");
+    auto it = std::find_if(s.assets.mounts.begin(), s.assets.mounts.end(),
+                           [&id](const MountVehicle& m) { return m.id == id; });
+    if (it == s.assets.mounts.end()) {
+        return err("mount not found");
+    }
+    s.assets.mounts.erase(it);
+    return kOk;
+}
+
+std::string remove_property(GameState& s, const oce_json* args, Rng&) {
+    if (!oce_json_is_object(args)) {
+        return err("invalid arguments");
+    }
+    const std::string id = oce_json_get_str(args, "property_id", "");
+    auto it = std::find_if(s.assets.properties.begin(), s.assets.properties.end(),
+                           [&id](const Property& p) { return p.id == id; });
+    if (it == s.assets.properties.end()) {
+        return err("property not found");
+    }
+    s.assets.properties.erase(it);
+    return kOk;
+}
+
 std::string equip_item_tool(GameState& s, const oce_json* args, Rng&) {
     if (!oce_json_is_object(args)) {
         return err("invalid arguments");
@@ -571,6 +599,16 @@ const char* const kSpecRemoveItem =
     "\"description\":\"Remove an item from the inventory by id.\","
     "\"parameters\":{\"type\":\"object\",\"properties\":{\"item_id\":{\"type\":\"string\"}},"
     "\"required\":[\"item_id\"]}}}";
+const char* const kSpecRemoveMount =
+    "{\"type\":\"function\",\"function\":{\"name\":\"remove_mount\","
+    "\"description\":\"Remove a mount from the player by id.\","
+    "\"parameters\":{\"type\":\"object\",\"properties\":{\"mount_id\":{\"type\":\"string\"}},"
+    "\"required\":[\"mount_id\"]}}}";
+const char* const kSpecRemoveProperty =
+    "{\"type\":\"function\",\"function\":{\"name\":\"remove_property\","
+    "\"description\":\"Remove a property from the player by id.\","
+    "\"parameters\":{\"type\":\"object\",\"properties\":{\"property_id\":{\"type\":\"string\"}},"
+    "\"required\":[\"property_id\"]}}}";
 const char* const kSpecEquip =
     "{\"type\":\"function\",\"function\":{\"name\":\"equip_item\","
     "\"description\":\"Equip an inventory item into its slot.\","
@@ -670,6 +708,8 @@ const std::vector<GmTool>& gm_tools() {
         {"add_world_fact", kSpecAddWorldFact, add_world_fact_tool},
         {"set_world", kSpecSetWorld, set_world_tool},
         {"add_random_item", kSpecAddRandomItem, add_random_item},
+        {"remove_mount", kSpecRemoveMount, remove_mount},
+        {"remove_property", kSpecRemoveProperty, remove_property},
     };
     return tools;
 }

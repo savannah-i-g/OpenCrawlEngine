@@ -56,7 +56,7 @@ int main(void) {
     using namespace oce;
     Rng rng(123u);
 
-    CHECK(gm_tools().size() == 19u);
+    CHECK(gm_tools().size() == 21u);
 
     // set_world establishes the setting, a starting location, and an opening hook.
     {

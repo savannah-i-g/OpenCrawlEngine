@@ -12,6 +12,7 @@
 
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 namespace oce::ui {
 
@@ -35,9 +36,13 @@ public:
     // button when the icon is missing.
     bool button(const std::string& name, float size, const ImVec4& tint = ImVec4(1, 1, 1, 1));
 
+    // Sorted list of loaded icon names (for pickers). Empty until ensure_loaded.
+    const std::vector<std::string>& names() const { return names_; }
+
 private:
     bool loaded_ = false;
     std::unordered_map<std::string, ImTextureID> textures_;
+    std::vector<std::string> names_;
     void load_one(const std::string& name, const std::string& path, void* rasterizer);
 };
 

@@ -81,15 +81,32 @@ private:
     bool prev_skill_active_ = false;
     long long skill_base_seq_ = 0;
 
-    // Game Master tools form.
+    // Game Master tools forms.
     char gm_item_name_[64];
+    int  gm_item_icon_ = 0;
     int  gm_item_type_ = 0;
     int  gm_item_rarity_ = 0;
-    int  gm_item_power_ = 3;
-    int  gm_gold_ = 0;
-    int  gm_xp_ = 0;
+    int  gm_item_slot_ = 0;
+    int  gm_item_power_ = 5;
+    char gm_item_desc_[256];
+    char gm_mount_name_[64];
+    char gm_mount_type_[32];
+    char gm_mount_desc_[256];
+    int  gm_mount_speed_ = 10; // tenths of a multiplier (10 = 1.0x)
+    int  gm_mount_capacity_ = 4;
+    int  gm_mount_upkeep_ = 2;
     char gm_faction_[64];
     int  gm_faction_rel_ = 10;
+    int  gm_faction_rep_ = 0;
+    char gm_prop_name_[64];
+    int  gm_prop_type_ = 0;
+    char gm_prop_location_[64];
+    int  gm_prop_value_ = 100;
+    char gm_prop_desc_[256];
+    int  gm_gold_ = 0;
+    int  gm_xp_ = 0;
+    int  gm_hp_ = 0;
+    int  gm_energy_ = 0;
 };
 
 } // namespace oce::ui
