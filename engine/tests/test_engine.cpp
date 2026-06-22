@@ -153,6 +153,7 @@ int main(void) {
             CHECK(engine.state_copy().player.name == "Beta"); // last new_game is active
             engine.load_save(alpha_id);
             CHECK(engine.state_copy().player.name == "Alpha");
+            engine.set_model("test/model-x");
         }
         {
             oce::EngineConfig cfg;
@@ -160,6 +161,7 @@ int main(void) {
             cfg.db_path = db2;
             oce::Engine engine(cfg);
             CHECK(engine.state_copy().player.name == "Alpha"); // resumes the active campaign
+            CHECK(engine.snapshot().model == "test/model-x");  // provider settings persist
         }
         cleanup(db2);
     }

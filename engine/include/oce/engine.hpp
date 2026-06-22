@@ -70,6 +70,8 @@ public:
     Engine& operator=(const Engine&) = delete;
 
     bool     set_api_key(const std::string& key);
+    void     set_model(const std::string& model);       // persisted; rebuilds the agent
+    void     set_base_url(const std::string& base_url); // persisted; rebuilds the agent
     // Starts a fresh game: creates the character and starting kit, resets state,
     // and begins a new game-master conversation. Synchronous and local.
     void     new_game(const NewGameParams& params);
@@ -97,6 +99,7 @@ private:
     bool        ensure_agent();
     void        register_tools();
     void        load_saved_state();
+    void        persist_settings(const std::string& model, const std::string& base_url);
     std::string system_prompt() const;
 
     oce_secrets* secrets_ = nullptr;

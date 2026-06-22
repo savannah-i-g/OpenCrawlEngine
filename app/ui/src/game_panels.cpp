@@ -15,6 +15,8 @@ GamePanels::GamePanels() {
     api_key_[0] = '\0';
     new_background_[0] = '\0';
     new_world_[0] = '\0';
+    model_buf_[0] = '\0';
+    base_url_buf_[0] = '\0';
     std::snprintf(new_name_, sizeof new_name_, "%s", "Adventurer");
 }
 
@@ -35,6 +37,8 @@ void GamePanels::draw(oce::Engine& engine) {
             }
             if (ImGui::MenuItem("Settings...")) {
                 show_settings_ = true;
+                std::snprintf(model_buf_, sizeof model_buf_, "%s", s.model.c_str());
+                std::snprintf(base_url_buf_, sizeof base_url_buf_, "%s", s.base_url.c_str());
             }
             ImGui::EndMenu();
         }
@@ -275,7 +279,20 @@ void GamePanels::draw(oce::Engine& engine) {
             if (ImGui::Button("Save key") && api_key_[0] != '\0') {
                 engine.set_api_key(api_key_);
                 std::memset(api_key_, 0, sizeof api_key_);
-                show_settings_ = false;
+            }
+            ImGui::Separator();
+            ImGui::InputText("Model", model_buf_, sizeof model_buf_);
+            ImGui::InputText("Base URL", base_url_buf_, sizeof base_url_buf_);
+            if (ImGui::Button("Save provider")) {
+                if (model_buf_[0] != '\0') {
+                    engine.set_model(model_buf_);
+                }
+                if (base_url_buf_[0] != '\0') {
+                    engine.set_base_url(base_url_buf_);
+                }
+            }
+            if (s.total_tokens > 0) {
+                ImGui::TextDisabled("Tokens used this session: %lld", s.total_tokens);
             }
         }
         ImGui::End();
