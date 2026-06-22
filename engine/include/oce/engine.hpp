@@ -9,10 +9,14 @@
 //             are created and destroyed only on the worker thread.
 
 #include "oce/model.hpp"
+#include "oce/rules/dice.hpp"
 #include "oce/snapshot.hpp"
 
 #include "oce_agent.h"
 #include "oce_store.h"
+
+#include <cstdint>
+#include <vector>
 
 #include <condition_variable>
 #include <mutex>
@@ -25,6 +29,15 @@ struct oce_llm;
 
 namespace oce {
 
+class Engine;
+struct GmTool;
+
+// Binds a registered tool to its owning engine for the dispatch thunk.
+struct ToolBinding {
+    Engine* engine;
+    const GmTool* tool;
+};
+
 struct EngineConfig {
     std::string base_url;
     std::string model;
@@ -32,6 +45,8 @@ struct EngineConfig {
     oce_store_backend store_backend = OCE_STORE_SQLITE;
     // When set, the agent uses this backend instead of a live client. For tests.
     const oce_agent_backend* test_backend = nullptr;
+    // 0 -> seed the RNG from the system; non-zero for reproducible play and tests.
+    uint64_t rng_seed = 0;
 };
 
 class Engine {
@@ -50,9 +65,9 @@ public:
     bool     save();
 
     // Invoked by the C tool/observer thunks on the worker thread.
-    std::string tool_apply_stats(const char* args_json);
-    std::string tool_set_suggested(const char* args_json);
+    std::string dispatch_tool(const GmTool& tool, const char* args_json);
     void        append_stream(const char* data, size_t n);
+    GameState   state_copy(); // a locked full copy of game state, for tests/inspection
 
 private:
     void        worker_main();
@@ -90,6 +105,9 @@ private:
     bool                    has_pending_ = false;
     bool                    stop_ = false;
     oce_agent_cancel        cancel_{};
+
+    Rng                      rng_;
+    std::vector<ToolBinding> tool_bindings_;
 
     std::thread worker_;
 };

@@ -31,3 +31,11 @@ follows [Semantic Versioning](https://semver.org/).
 - The game master can now adjust energy and experience (with automatic
   level-ups) alongside health and gold; the interface shows class, level, and
   energy.
+- A full game-master tool suite: start_combat/end_combat, set_skill_check,
+  add_item/remove_item/equip_item/unequip_item,
+  add_business/add_relation/add_property/add_mount/change_faction, and
+  upsert_npc/set_location/add_world_fact, alongside apply_stat_changes and
+  set_suggested_actions. Tools dispatch through one registry under the state
+  lock; every tool validates its arguments and returns a structured result, and
+  each is unit-tested including malformed input. Each turn the model receives a
+  compact JSON view of the game state.

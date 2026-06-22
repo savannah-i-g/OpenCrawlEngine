@@ -1,7 +1,7 @@
 #include "oce/engine.hpp"
 
+#include "oce/gm/tools.hpp"
 #include "oce/rules/character.hpp"
-#include "oce/rules/leveling.hpp"
 
 #include "oce_json.h"
 #include "oce_llm.h"
@@ -9,21 +9,17 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <random>
 #include <utility>
 
 // C-linkage thunks bridging the agent's callbacks to Engine methods.
 extern "C" {
-char* oce_engine_thunk_apply_stats(const char* args, void* user);
-char* oce_engine_thunk_set_suggested(const char* args, void* user);
+char* oce_engine_gm_thunk(const char* args, void* user);
 void oce_engine_thunk_on_text(const char* d, size_t n, void* user);
 }
 
 namespace oce {
 namespace {
-
-int clampi(int v, int lo, int hi) {
-    return v < lo ? lo : (v > hi ? hi : v);
-}
 
 std::string serialize_state(const GameState& s) {
     oce_json* root = oce_json_new_object();
@@ -142,6 +138,51 @@ const char* env_or(const char* name, const char* fallback) {
     return (v != nullptr && v[0] != '\0') ? v : fallback;
 }
 
+// A compact JSON view of state, given to the model each turn so it can reason
+// about the player, location, combat, and inventory (item ids for the tools).
+std::string compact_state(const GameState& s) {
+    oce_json* root = oce_json_new_object();
+
+    oce_json* p = oce_json_new_object();
+    oce_json_obj_set_str(p, "class", class_to_string(s.player.cls));
+    oce_json_obj_set_int(p, "level", s.player.level);
+    oce_json_obj_set_int(p, "hp", s.player.hp);
+    oce_json_obj_set_int(p, "max_hp", s.player.max_hp);
+    oce_json_obj_set_int(p, "energy", s.player.energy);
+    oce_json_obj_set_int(p, "max_energy", s.player.max_energy);
+    oce_json_obj_set_int(p, "gold", s.player.gold);
+    oce_json_obj_set(root, "player", p);
+
+    oce_json_obj_set_str(root, "location", s.world_state.current_location.c_str());
+    oce_json_obj_set_bool(root, "in_combat", s.combat.active);
+    if (s.combat.active) {
+        oce_json* enemies = oce_json_new_array();
+        for (const Enemy& e : s.combat.enemies) {
+            oce_json* eo = oce_json_new_object();
+            oce_json_obj_set_str(eo, "name", e.name.c_str());
+            oce_json_obj_set_int(eo, "hp", e.hp);
+            oce_json_obj_set_int(eo, "max_hp", e.max_hp);
+            oce_json_arr_append(enemies, eo);
+        }
+        oce_json_obj_set(root, "enemies", enemies);
+    }
+
+    oce_json* inv = oce_json_new_array();
+    for (const Item& it : s.inventory) {
+        oce_json* io = oce_json_new_object();
+        oce_json_obj_set_str(io, "id", it.id.c_str());
+        oce_json_obj_set_str(io, "name", it.name.c_str());
+        oce_json_arr_append(inv, io);
+    }
+    oce_json_obj_set(root, "inventory", inv);
+
+    char* text = oce_json_print(root, false);
+    std::string out = text ? text : "{}";
+    free(text);
+    oce_json_free(root);
+    return out;
+}
+
 } // namespace
 
 Engine::Engine(const EngineConfig& cfg) {
@@ -151,6 +192,7 @@ Engine::Engine(const EngineConfig& cfg) {
         use_test_backend_ = true;
         test_backend_ = *cfg.test_backend;
     }
+    rng_ = Rng(cfg.rng_seed != 0 ? cfg.rng_seed : (uint64_t) std::random_device{}());
 
     oce_http_global_init();
     secrets_ = oce_secrets_open();
@@ -261,67 +303,20 @@ bool Engine::save() {
     return ok;
 }
 
-std::string Engine::tool_apply_stats(const char* args_json) {
-    oce_json* a = oce_json_parse(args_json, std::strlen(args_json));
-    const int hp = (int) oce_json_get_int(a, "hp", 0);
-    const int gold = (int) oce_json_get_int(a, "gold", 0);
-    const int energy = (int) oce_json_get_int(a, "energy", 0);
-    const long long xp = oce_json_get_int(a, "xp", 0);
-    oce_json_free(a);
-
-    int new_hp;
-    int new_gold;
-    int new_energy;
-    int new_level;
-    int levels_gained = 0;
+std::string Engine::dispatch_tool(const GmTool& tool, const char* args_json) {
+    oce_json* parsed = oce_json_parse(args_json, std::strlen(args_json));
+    std::string result;
     {
         std::lock_guard<std::mutex> sl(state_mutex_);
-        Player& pl = state_.player;
-        pl.hp = clampi(pl.hp + hp, 0, pl.max_hp);
-        pl.gold = pl.gold + gold;
-        if (pl.gold < 0) {
-            pl.gold = 0;
-        }
-        pl.energy = clampi(pl.energy + energy, 0, pl.max_energy);
-        if (xp > 0) {
-            pl.xp += xp;
-            levels_gained = apply_level_up(pl);
-        }
-        new_hp = pl.hp;
-        new_gold = pl.gold;
-        new_energy = pl.energy;
-        new_level = pl.level;
+        result = tool.apply(state_, parsed, rng_);
     }
-    std::string r = "{\"ok\":true,\"hp\":" + std::to_string(new_hp) +
-                    ",\"gold\":" + std::to_string(new_gold) +
-                    ",\"energy\":" + std::to_string(new_energy) +
-                    ",\"level\":" + std::to_string(new_level);
-    if (levels_gained > 0) {
-        r += ",\"leveled_up\":" + std::to_string(levels_gained);
-    }
-    r += "}";
-    return r;
+    oce_json_free(parsed);
+    return result;
 }
 
-std::string Engine::tool_set_suggested(const char* args_json) {
-    oce_json* a = oce_json_parse(args_json, std::strlen(args_json));
-    std::vector<std::string> actions;
-    const oce_json* arr = oce_json_get(a, "actions");
-    if (oce_json_is_array(arr)) {
-        size_t n = oce_json_arr_len(arr);
-        for (size_t i = 0; i < n && i < 8; ++i) {
-            const char* s = oce_json_as_str(oce_json_arr_at(arr, i), "");
-            if (s[0] != '\0') {
-                actions.emplace_back(s);
-            }
-        }
-    }
-    oce_json_free(a);
-    {
-        std::lock_guard<std::mutex> sl(state_mutex_);
-        state_.suggested_actions = std::move(actions);
-    }
-    return "{\"ok\":true}";
+GameState Engine::state_copy() {
+    std::lock_guard<std::mutex> sl(state_mutex_);
+    return state_;
 }
 
 void Engine::append_stream(const char* data, size_t n) {
@@ -332,35 +327,38 @@ void Engine::append_stream(const char* data, size_t n) {
 std::string Engine::system_prompt() const {
     return "You are the game master of a text role-playing game. Narrate the world and the "
            "outcomes of the player's actions in vivid second-person prose, a few sentences at a "
-           "time.\n\n"
-           "When an action changes the player's health, energy, gold, or experience, call "
-           "apply_stat_changes with the signed deltas (positive experience may trigger a "
-           "level-up). After narrating, call set_suggested_actions with two to four short actions "
-           "the player might take next. Do not state the player's numeric stats in the prose; the "
-           "interface displays them.";
+           "time. Each turn you are given the current game state as JSON; use it to stay "
+           "consistent.\n\n"
+           "Drive the game through tools:\n"
+           "- apply_stat_changes: signed deltas to hp, energy, gold, or xp (positive xp may level "
+           "the player up).\n"
+           "- start_combat / end_combat: begin an encounter (give each enemy a name and level; the "
+           "engine sets their stats) and resolve it (outcome plus any xp, gold, and loot).\n"
+           "- set_skill_check: when an action is uncertain, request a check on an attribute against "
+           "a difficulty; the engine rolls the dice.\n"
+           "- add_item / remove_item / equip_item / unequip_item: manage the inventory by item id.\n"
+           "- add_business / add_relation / add_property / add_mount / change_faction: grant "
+           "holdings and adjust standing.\n"
+           "- upsert_npc / set_location / add_world_fact: keep the world consistent.\n"
+           "Finish each turn by calling set_suggested_actions with two to four short next "
+           "actions.\n\n"
+           "The engine owns all randomness: never invent dice results or decide whether an attack "
+           "or skill check succeeds — call the tool and react to its result. Do not state the "
+           "player's numeric stats in the prose; the interface shows them.";
 }
 
 void Engine::register_tools() {
-    static const char* apply_spec =
-        "{\"type\":\"function\",\"function\":{\"name\":\"apply_stat_changes\","
-        "\"description\":\"Apply signed deltas to the player's hp, energy, gold, and xp.\","
-        "\"parameters\":{\"type\":\"object\",\"properties\":{"
-        "\"hp\":{\"type\":\"integer\",\"description\":\"change to hit points\"},"
-        "\"energy\":{\"type\":\"integer\",\"description\":\"change to energy\"},"
-        "\"gold\":{\"type\":\"integer\",\"description\":\"change to gold\"},"
-        "\"xp\":{\"type\":\"integer\",\"description\":\"experience gained (positive)\"}}}}}";
-    static const char* suggest_spec =
-        "{\"type\":\"function\",\"function\":{\"name\":\"set_suggested_actions\","
-        "\"description\":\"Offer two to four short suggested next actions.\","
-        "\"parameters\":{\"type\":\"object\",\"properties\":{"
-        "\"actions\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}}},"
-        "\"required\":[\"actions\"]}}}";
-
-    oce_agent_tool apply = {"apply_stat_changes", apply_spec, oce_engine_thunk_apply_stats, this};
-    oce_agent_tool suggest = {"set_suggested_actions", suggest_spec, oce_engine_thunk_set_suggested,
-                              this};
-    oce_agent_add_tool(agent_, &apply);
-    oce_agent_add_tool(agent_, &suggest);
+    const std::vector<GmTool>& tools = gm_tools();
+    tool_bindings_.clear();
+    tool_bindings_.reserve(tools.size()); // stable addresses for the agent's borrowed user pointers
+    for (const GmTool& t : tools) {
+        tool_bindings_.push_back(ToolBinding{this, &t});
+    }
+    for (size_t i = 0; i < tools.size(); ++i) {
+        oce_agent_tool at = {tools[i].name, tools[i].spec_json, oce_engine_gm_thunk,
+                             &tool_bindings_[i]};
+        oce_agent_add_tool(agent_, &at);
+    }
 }
 
 bool Engine::ensure_agent() {
@@ -434,8 +432,12 @@ void Engine::run_turn(const std::string& input) {
         return;
     }
 
+    const std::string turn_message =
+        "Current game state:\n" + compact_state(state_copy()) +
+        "\n\nThe player attempts the following. Narrate the outcome and call tools as needed:\n" +
+        input;
     oce_agent_observer obs = {oce_engine_thunk_on_text, nullptr, this};
-    oce_agent_status st = oce_agent_run(agent_, input.c_str(), &obs, &cancel_);
+    oce_agent_status st = oce_agent_run(agent_, turn_message.c_str(), &obs, &cancel_);
 
     {
         std::lock_guard<std::mutex> sl(state_mutex_);
@@ -494,12 +496,9 @@ static char* dup_cstr(const std::string& s) {
     return p;
 }
 
-extern "C" char* oce_engine_thunk_apply_stats(const char* args, void* user) {
-    return dup_cstr(static_cast<oce::Engine*>(user)->tool_apply_stats(args));
-}
-
-extern "C" char* oce_engine_thunk_set_suggested(const char* args, void* user) {
-    return dup_cstr(static_cast<oce::Engine*>(user)->tool_set_suggested(args));
+extern "C" char* oce_engine_gm_thunk(const char* args, void* user) {
+    oce::ToolBinding* b = static_cast<oce::ToolBinding*>(user);
+    return dup_cstr(b->engine->dispatch_tool(*b->tool, args));
 }
 
 extern "C" void oce_engine_thunk_on_text(const char* d, size_t n, void* user) {
