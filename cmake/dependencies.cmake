@@ -10,9 +10,9 @@ find_package(Threads REQUIRED)
 # Infrastructure libraries. Present on the system; linked by the libs/ modules
 # from their respective milestones. Located here so configuration fails early
 # with a clear message if a development package is missing.
-pkg_check_modules(CJSON   IMPORTED_TARGET libcjson)
-pkg_check_modules(CURL    IMPORTED_TARGET libcurl)
-pkg_check_modules(SQLITE3 IMPORTED_TARGET sqlite3)
+pkg_check_modules(CJSON   REQUIRED IMPORTED_TARGET libcjson)
+pkg_check_modules(CURL    REQUIRED IMPORTED_TARGET libcurl)
+pkg_check_modules(SQLITE3 REQUIRED IMPORTED_TARGET sqlite3)
 
 if(OCE_BUILD_UI)
     pkg_check_modules(GLFW3 REQUIRED IMPORTED_TARGET glfw3)
