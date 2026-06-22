@@ -38,4 +38,18 @@ if(OCE_BUILD_UI)
         ${imgui_SOURCE_DIR}
         ${imgui_SOURCE_DIR}/backends)
     target_link_libraries(imgui PUBLIC PkgConfig::GLFW3 OpenGL::GL ${CMAKE_DL_LIBS})
+
+    # nanosvg: header-only SVG parser + rasterizer (zlib license). Fetched and
+    # exposed as an include-only target; the implementation is compiled in
+    # app/ui/src/icon_cache.cpp. SYSTEM include keeps strict warnings off it.
+    FetchContent_Declare(nanosvg
+        GIT_REPOSITORY https://github.com/memononen/nanosvg.git
+        GIT_TAG        master
+        GIT_SHALLOW    TRUE)
+    FetchContent_GetProperties(nanosvg)
+    if(NOT nanosvg_POPULATED)
+        FetchContent_Populate(nanosvg)
+    endif()
+    add_library(oce_nanosvg INTERFACE)
+    target_include_directories(oce_nanosvg SYSTEM INTERFACE ${nanosvg_SOURCE_DIR}/src)
 endif()

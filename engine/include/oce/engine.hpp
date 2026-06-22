@@ -124,6 +124,9 @@ public:
     void     player_consume(const std::string& item_id);
     void     allocate_attribute(const std::string& attribute);
     int      collect_income(); // collects accrued business income; returns gold gained
+    // Applies a named game-master tool directly (for the GM/debug panel), under
+    // the state lock; returns the tool's JSON result. No-op while a turn runs.
+    std::string apply_gm_tool(const std::string& tool_name, const std::string& args_json);
     Snapshot snapshot();
     void     wait_idle(); // blocks until no turn is in progress
     bool     save();

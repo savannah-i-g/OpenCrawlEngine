@@ -1,5 +1,7 @@
 #include "oce_ui/ui_app.hpp"
 
+#include "oce_ui/ui_fonts.hpp"
+
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
@@ -16,7 +18,57 @@ void glfw_error_callback(int error, const char* description) {
     std::fprintf(stderr, "GLFW error %d: %s\n", error, description);
 }
 
+ImFont* try_load_font(const char* const* paths, size_t count, float size) {
+    ImGuiIO& io = ImGui::GetIO();
+    for (size_t i = 0; i < count; ++i) {
+        FILE* f = std::fopen(paths[i], "rb");
+        if (f == nullptr) {
+            continue;
+        }
+        std::fclose(f);
+        ImFont* font = io.Fonts->AddFontFromFileTTF(paths[i], size);
+        if (font != nullptr) {
+            return font;
+        }
+    }
+    return nullptr;
+}
+
 } // namespace
+
+ImFont* g_body_font = nullptr;
+ImFont* g_bold_font = nullptr;
+ImFont* g_heading_font = nullptr;
+
+void load_fonts() {
+    static const char* const regular[] = {
+        "/usr/share/fonts/truetype/ibm-plex/IBMPlexSerif-Regular.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf",
+        "/usr/share/fonts/truetype/freefont/FreeSerif.ttf",
+    };
+    static const char* const bold[] = {
+        "/usr/share/fonts/truetype/ibm-plex/IBMPlexSerif-Bold.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSerif-Bold.ttf",
+        "/usr/share/fonts/truetype/freefont/FreeSerifBold.ttf",
+    };
+    const size_t nreg = sizeof regular / sizeof regular[0];
+    const size_t nbold = sizeof bold / sizeof bold[0];
+
+    g_body_font = try_load_font(regular, nreg, 18.0f);
+    if (g_body_font == nullptr) {
+        g_body_font = ImGui::GetIO().Fonts->AddFontDefault();
+    }
+    g_bold_font = try_load_font(bold, nbold, 18.0f);
+    if (g_bold_font == nullptr) {
+        g_bold_font = g_body_font;
+    }
+    g_heading_font = try_load_font(bold, nbold, 26.0f);
+    if (g_heading_font == nullptr) {
+        g_heading_font = g_body_font;
+    }
+}
 
 std::unique_ptr<UiApp> UiApp::create(const std::string& title, int width, int height) {
     glfwSetErrorCallback(glfw_error_callback);
@@ -42,6 +94,7 @@ std::unique_ptr<UiApp> UiApp::create(const std::string& title, int width, int he
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
     ImGui::StyleColorsDark();
+    load_fonts();
 
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init("#version 330");
@@ -70,7 +123,7 @@ bool UiApp::begin_frame() {
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
-    ImGui::DockSpaceOverViewport();
+    // The dock host + default layout are built by GamePanels::draw.
     return true;
 }
 
