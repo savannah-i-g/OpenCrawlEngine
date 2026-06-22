@@ -184,6 +184,10 @@ private:
     long long    autofill_seq_ = 0;
     DiceRoll     last_roll_;
     long long    dice_seq_ = 0;
+    // Set while an auto-continue turn narrates a just-resolved skill check; used
+    // to suppress a chained check the game master sets within that same turn
+    // (which would otherwise loop: resolve → narrate → re-request → resolve …).
+    bool         resolving_check_ = false;
 
     std::mutex              turn_mutex_;
     std::condition_variable turn_cv_;

@@ -64,4 +64,8 @@ if(OCE_BUILD_TESTS)
     add_executable(test_combat_depth tests/test_combat_depth.cpp)
     target_link_libraries(test_combat_depth PRIVATE oce_engine oce_warnings)
     add_test(NAME combat_depth COMMAND test_combat_depth)
+
+    add_executable(test_skill_loop tests/test_skill_loop.cpp)
+    target_link_libraries(test_skill_loop PRIVATE oce_engine oce_warnings)
+    add_test(NAME skill_loop COMMAND test_skill_loop)
 endif()
