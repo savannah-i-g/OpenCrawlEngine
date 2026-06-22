@@ -38,6 +38,8 @@ ImFont* try_load_font(const char* const* paths, size_t count, float size) {
 
 ImFont* g_body_font = nullptr;
 ImFont* g_bold_font = nullptr;
+ImFont* g_italic_font = nullptr;
+ImFont* g_bolditalic_font = nullptr;
 ImFont* g_heading_font = nullptr;
 
 void load_fonts() {
@@ -53,8 +55,22 @@ void load_fonts() {
         "/usr/share/fonts/truetype/liberation/LiberationSerif-Bold.ttf",
         "/usr/share/fonts/truetype/freefont/FreeSerifBold.ttf",
     };
+    static const char* const italic[] = {
+        "/usr/share/fonts/truetype/ibm-plex/IBMPlexSerif-Italic.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Italic.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSerif-Italic.ttf",
+        "/usr/share/fonts/truetype/freefont/FreeSerifItalic.ttf",
+    };
+    static const char* const bold_italic[] = {
+        "/usr/share/fonts/truetype/ibm-plex/IBMPlexSerif-BoldItalic.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSerif-BoldItalic.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSerif-BoldItalic.ttf",
+        "/usr/share/fonts/truetype/freefont/FreeSerifBoldItalic.ttf",
+    };
     const size_t nreg = sizeof regular / sizeof regular[0];
     const size_t nbold = sizeof bold / sizeof bold[0];
+    const size_t nital = sizeof italic / sizeof italic[0];
+    const size_t nbi = sizeof bold_italic / sizeof bold_italic[0];
 
     g_body_font = try_load_font(regular, nreg, 18.0f);
     if (g_body_font == nullptr) {
@@ -63,6 +79,14 @@ void load_fonts() {
     g_bold_font = try_load_font(bold, nbold, 18.0f);
     if (g_bold_font == nullptr) {
         g_bold_font = g_body_font;
+    }
+    g_italic_font = try_load_font(italic, nital, 18.0f);
+    if (g_italic_font == nullptr) {
+        g_italic_font = g_body_font;
+    }
+    g_bolditalic_font = try_load_font(bold_italic, nbi, 18.0f);
+    if (g_bolditalic_font == nullptr) {
+        g_bolditalic_font = g_bold_font;
     }
     g_heading_font = try_load_font(bold, nbold, 26.0f);
     if (g_heading_font == nullptr) {

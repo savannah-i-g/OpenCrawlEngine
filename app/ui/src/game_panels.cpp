@@ -197,15 +197,16 @@ void dice_roll_indicator(const char* prefix) {
     ImGui::TextDisabled("%s rolling… [%d]", prefix, face);
 }
 
-// A rounded stat bar with a horizontal dark→bright gradient fill and a centered
-// value overlay. Advances the cursor like a widget of the given size.
-void gradient_bar(float w, float h, float frac, const ImVec4& col, const char* overlay) {
+// A square-cornered stat bar with a horizontal dark→bright gradient fill, a
+// themed border, and a centered value overlay. Advances the cursor like a
+// widget of the given size.
+void gradient_bar(float w, float h, float frac, const ImVec4& col, const char* overlay,
+                  const ImVec4& border) {
     frac = frac < 0.0f ? 0.0f : (frac > 1.0f ? 1.0f : frac);
     ImDrawList* dl = ImGui::GetWindowDrawList();
     const ImVec2 p = ImGui::GetCursorScreenPos();
     const ImVec2 end(p.x + w, p.y + h);
-    const float rounding = h * 0.45f;
-    dl->AddRectFilled(p, end, ImGui::GetColorU32(ImVec4(0.03f, 0.03f, 0.03f, 0.85f)), rounding);
+    dl->AddRectFilled(p, end, ImGui::GetColorU32(ImVec4(0.03f, 0.03f, 0.03f, 0.85f)), 0.0f);
     if (frac > 0.001f) {
         const ImVec2 fend(p.x + w * frac, end.y);
         const ImU32 dark =
@@ -213,7 +214,7 @@ void gradient_bar(float w, float h, float frac, const ImVec4& col, const char* o
         const ImU32 bright = ImGui::GetColorU32(col);
         dl->AddRectFilledMultiColor(p, fend, dark, bright, bright, dark);
     }
-    dl->AddRect(p, end, ImGui::GetColorU32(ImVec4(0.0f, 0.0f, 0.0f, 0.45f)), rounding);
+    dl->AddRect(p, end, ImGui::GetColorU32(border), 0.0f, 0, 1.5f);
     if (overlay != nullptr && overlay[0] != '\0') {
         const ImVec2 ts = ImGui::CalcTextSize(overlay);
         const ImVec2 tp(p.x + (w - ts.x) * 0.5f, p.y + (h - ts.y) * 0.5f);
@@ -234,18 +235,32 @@ void heading(const char* text) {
     }
 }
 
-// Narrative with lightweight inline markdown: *...*/**...** render bold + warm.
+// Narrative with lightweight inline markdown: **bold**/__bold__ render in warm
+// gold with a bold serif; *italic*/_italic_ render in an italic serif; the two
+// combine. Markup is display-only and word-wrapped manually so styling can vary
+// between words.
 void render_markdown(const std::string& text, const ImVec4& base) {
-    const ImVec4 emph_color(1.0f, 0.86f, 0.55f, 1.0f);
+    const ImVec4 bold_color(0.88f, 0.74f, 0.42f, 1.0f); // warm gold for emphasised terms
     struct Token {
         std::string text;
-        bool emphasis;
+        bool bold;
+        bool italic;
+        bool brk;
     };
     std::vector<Token> tokens;
     std::string word;
-    bool emphasis = false;
-    bool word_emphasis = false;
     bool word_open = false;
+    bool word_bold = false;
+    bool word_italic = false;
+    bool bold = false;
+    bool italic = false;
+    auto push_word = [&]() {
+        if (word_open) {
+            tokens.push_back({word, word_bold, word_italic, false});
+            word.clear();
+            word_open = false;
+        }
+    };
     const size_t n = text.size();
     for (size_t i = 0; i < n;) {
         const char c = text[i];
@@ -254,32 +269,35 @@ void render_markdown(const std::string& text, const ImVec4& base) {
             while (j < n && (text[j] == '*' || text[j] == '_')) {
                 ++j;
             }
-            emphasis = !emphasis;
+            push_word();
+            if (j - i >= 2) {
+                bold = !bold; // ** or __ toggles bold
+            } else {
+                italic = !italic; // single * or _ toggles italic
+            }
             i = j;
             continue;
         }
-        if (c == ' ' || c == '\n' || c == '\t' || c == '\r') {
-            if (word_open) {
-                tokens.push_back({word, word_emphasis});
-                word.clear();
-                word_open = false;
-            }
-            if (c == '\n') {
-                tokens.push_back({std::string("\n"), false});
-            }
+        if (c == '\n') {
+            push_word();
+            tokens.push_back({std::string(), false, false, true});
+            ++i;
+            continue;
+        }
+        if (c == ' ' || c == '\t' || c == '\r') {
+            push_word();
             ++i;
             continue;
         }
         if (!word_open) {
             word_open = true;
-            word_emphasis = emphasis;
+            word_bold = bold;
+            word_italic = italic;
         }
         word += c;
         ++i;
     }
-    if (word_open) {
-        tokens.push_back({word, word_emphasis});
-    }
+    push_word();
 
     const float content_start = ImGui::GetCursorPosX();
     const float right = content_start + ImGui::GetContentRegionAvail().x;
@@ -287,10 +305,17 @@ void render_markdown(const std::string& text, const ImVec4& base) {
     float cursor_x = content_start;
     bool line_start = true;
     for (const Token& t : tokens) {
-        if (t.text == "\n") {
+        if (t.brk) {
             line_start = true;
             cursor_x = content_start;
             continue;
+        }
+        ImFont* font = (t.bold && t.italic) ? g_bolditalic_font
+                       : t.bold             ? g_bold_font
+                       : t.italic           ? g_italic_font
+                                            : nullptr;
+        if (font != nullptr) {
+            ImGui::PushFont(font);
         }
         const float w = ImGui::CalcTextSize(t.text.c_str()).x;
         const bool wrap = !line_start && (cursor_x + space_w + w > right);
@@ -300,11 +325,8 @@ void render_markdown(const std::string& text, const ImVec4& base) {
         } else {
             cursor_x = content_start + w;
         }
-        if (t.emphasis && g_bold_font != nullptr) {
-            ImGui::PushFont(g_bold_font);
-        }
-        ImGui::TextColored(t.emphasis ? emph_color : base, "%s", t.text.c_str());
-        if (t.emphasis && g_bold_font != nullptr) {
+        ImGui::TextColored(t.bold ? bold_color : base, "%s", t.text.c_str());
+        if (font != nullptr) {
             ImGui::PopFont();
         }
         line_start = false;
@@ -477,6 +499,8 @@ void GamePanels::build_layout(oce::Engine& engine, const oce::Snapshot& s) {
         const float gap = 18.0f;
         const float slot_w = (ImGui::GetContentRegionAvail().x - 2.0f * gap) / 3.0f;
         const long long xp_next = oce::xp_for_next_level(s.player.level);
+        const ImVec4 acc = accent_for(s.theme);
+        const ImVec4 bar_border(acc.x, acc.y, acc.z, 0.70f);
         auto slot = [&](const char* icon, const char* label, long long cur, long long maxv,
                         const ImVec4& col) {
             ImGui::BeginGroup();
@@ -485,7 +509,7 @@ void GamePanels::build_layout(oce::Engine& engine, const oce::Snapshot& s) {
             ImGui::TextColored(col, "%s", label);
             const std::string overlay = std::to_string(cur) + " / " + std::to_string(maxv);
             const float frac = maxv > 0 ? (float) cur / (float) maxv : 0.0f;
-            gradient_bar(slot_w, 18.0f, frac, col, overlay.c_str());
+            gradient_bar(slot_w, 18.0f, frac, col, overlay.c_str(), bar_border);
             ImGui::EndGroup();
         };
         slot("health-normal", "HP", s.player.hp, s.player.max_hp, ImVec4(0.82f, 0.27f, 0.27f, 1.0f));
