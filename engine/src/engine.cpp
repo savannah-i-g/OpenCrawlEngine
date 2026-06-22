@@ -3,6 +3,7 @@
 #include "oce/gm/tools.hpp"
 #include "oce/rules/character.hpp"
 #include "oce/rules/combat.hpp"
+#include "oce/rules/items.hpp"
 #include "oce/rules/skills.hpp"
 #include "oce/rules/world.hpp"
 #include "oce/serialize.hpp"
@@ -354,6 +355,70 @@ void Engine::resolve_skill_check() {
         }
         sc = SkillCheck{};
         changed = true;
+    }
+    if (changed) {
+        save();
+    }
+}
+
+void Engine::player_equip(const std::string& item_id) {
+    bool changed = false;
+    {
+        std::lock_guard<std::mutex> sl(state_mutex_);
+        if (turn_in_progress_) {
+            return;
+        }
+        changed = equip_item(state_.inventory, state_.equipment, item_id);
+    }
+    if (changed) {
+        save();
+    }
+}
+
+void Engine::player_unequip(const std::string& slot) {
+    ItemSlot s;
+    if (slot == "hand") {
+        s = ItemSlot::Hand;
+    } else if (slot == "body") {
+        s = ItemSlot::Body;
+    } else {
+        return;
+    }
+    bool changed = false;
+    {
+        std::lock_guard<std::mutex> sl(state_mutex_);
+        if (turn_in_progress_) {
+            return;
+        }
+        changed = unequip_slot(state_.inventory, state_.equipment, s);
+    }
+    if (changed) {
+        save();
+    }
+}
+
+void Engine::player_consume(const std::string& item_id) {
+    bool changed = false;
+    {
+        std::lock_guard<std::mutex> sl(state_mutex_);
+        if (turn_in_progress_) {
+            return;
+        }
+        changed = consume_item(state_.player, state_.inventory, item_id);
+    }
+    if (changed) {
+        save();
+    }
+}
+
+void Engine::allocate_attribute(const std::string& attribute) {
+    bool changed = false;
+    {
+        std::lock_guard<std::mutex> sl(state_mutex_);
+        if (turn_in_progress_) {
+            return;
+        }
+        changed = oce::allocate_attribute(state_.player, attribute);
     }
     if (changed) {
         save();

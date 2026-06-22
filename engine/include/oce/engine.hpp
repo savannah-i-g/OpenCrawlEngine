@@ -107,6 +107,11 @@ public:
     void     combat_action(const std::string& action, int target_index);
     // Rolls the active skill check, records the outcome to the story, and clears it.
     void     resolve_skill_check();
+    // Player-driven inventory and progression actions (synchronous, local).
+    void     player_equip(const std::string& item_id);
+    void     player_unequip(const std::string& slot); // "hand" | "body"
+    void     player_consume(const std::string& item_id);
+    void     allocate_attribute(const std::string& attribute);
     Snapshot snapshot();
     void     wait_idle(); // blocks until no turn is in progress
     bool     save();

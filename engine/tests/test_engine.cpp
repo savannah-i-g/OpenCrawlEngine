@@ -190,6 +190,37 @@ int main(void) {
         cleanup(db2);
     }
 
+    // Player-driven inventory actions wire through to the rules and persist.
+    {
+        oce::EngineConfig cfg;
+        cfg.store_backend = OCE_STORE_MEMORY;
+        oce::Engine engine(cfg);
+        oce::NewGameParams p;
+        p.name = "Geared";
+        engine.new_game(p);
+        const size_t kit = engine.state_copy().inventory.size();
+        const int str0 = engine.state_copy().player.attributes.strength;
+
+        engine.player_equip("starter-sword");
+        {
+            oce::GameState gs = engine.state_copy();
+            CHECK(gs.equipment.hand.has_value());
+            CHECK(gs.equipment.hand.has_value() && gs.equipment.hand->id == "starter-sword");
+            CHECK(gs.inventory.size() == kit - 1u);
+        }
+        engine.player_unequip("hand");
+        {
+            oce::GameState gs = engine.state_copy();
+            CHECK(!gs.equipment.hand.has_value());
+            CHECK(gs.inventory.size() == kit); // the sword returned to the pack
+        }
+        engine.player_consume("starter-health-potion-1");
+        CHECK(engine.state_copy().inventory.size() == kit - 1u);
+        // No attribute points at level 1: allocation is a no-op.
+        engine.allocate_attribute("strength");
+        CHECK(engine.state_copy().player.attributes.strength == str0);
+    }
+
     cleanup(db);
 
     if (failures == 0) {

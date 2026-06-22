@@ -56,7 +56,7 @@ int main(void) {
     using namespace oce;
     Rng rng(123u);
 
-    CHECK(gm_tools().size() == 18u);
+    CHECK(gm_tools().size() == 19u);
 
     // set_world establishes the setting, a starting location, and an opening hook.
     {
@@ -70,6 +70,16 @@ int main(void) {
         CHECK(s.world_state.current_location == "The Tidewall");
         CHECK(!s.story.empty()); // the hook is recorded as narration
         CHECK(!ok(call("set_world", "{\"starting_location\":\"x\"}", s, rng))); // description required
+    }
+
+    // add_random_item grants procedurally generated loot.
+    {
+        GameState s;
+        CHECK(ok(call("add_random_item", "{\"rarity\":\"rare\"}", s, rng)));
+        CHECK(s.inventory.size() == 1u);
+        CHECK(s.inventory.back().rarity == ItemRarity::Rare);
+        CHECK(ok(call("add_random_item", "{}", s, rng))); // no args: engine rolls
+        CHECK(s.inventory.size() == 2u);
     }
 
     // apply_stat_changes

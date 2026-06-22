@@ -501,6 +501,23 @@ std::string set_world_tool(GameState& s, const oce_json* args, Rng&) {
     return kOk;
 }
 
+std::string add_random_item(GameState& s, const oce_json* args, Rng& rng) {
+    int level = s.player.level;
+    std::string rarity_s;
+    if (oce_json_is_object(args)) {
+        level = (int) oce_json_get_int(args, "level", level);
+        rarity_s = oce_json_get_str(args, "rarity", "");
+    }
+    level = std::clamp(level, 0, 100);
+    ItemRarity rarity;
+    const Item it = (!rarity_s.empty() && parse_rarity(rarity_s, rarity))
+                        ? random_item(rng, level, rarity)
+                        : random_item(rng, level);
+    s.inventory.push_back(it);
+    // it.id and it.name are engine-generated from a fixed catalog: no JSON escaping needed.
+    return std::string("{\"ok\":true,\"id\":\"") + it.id + "\",\"name\":\"" + it.name + "\"}";
+}
+
 // --- tool specs (OpenAI function schemas) ---------------------------------
 
 const char* const kSpecApplyStat =
@@ -617,6 +634,14 @@ const char* const kSpecSetWorld =
     "\"world_description\":{\"type\":\"string\"},\"context\":{\"type\":\"string\"},"
     "\"starting_location\":{\"type\":\"string\"},\"storyline_hook\":{\"type\":\"string\"}},"
     "\"required\":[\"world_description\"]}}}";
+const char* const kSpecAddRandomItem =
+    "{\"type\":\"function\",\"function\":{\"name\":\"add_random_item\","
+    "\"description\":\"Add a procedurally generated item to the inventory as loot; the engine picks "
+    "the archetype, rarity (biased by level), and effects. Optionally bias by level or force a "
+    "rarity.\","
+    "\"parameters\":{\"type\":\"object\",\"properties\":{\"level\":{\"type\":\"integer\"},"
+    "\"rarity\":{\"type\":\"string\",\"enum\":[\"common\",\"uncommon\",\"rare\",\"epic\","
+    "\"legendary\"]}}}}}";
 
 } // namespace
 
@@ -640,6 +665,7 @@ const std::vector<GmTool>& gm_tools() {
         {"set_location", kSpecSetLocation, set_location_tool},
         {"add_world_fact", kSpecAddWorldFact, add_world_fact_tool},
         {"set_world", kSpecSetWorld, set_world_tool},
+        {"add_random_item", kSpecAddRandomItem, add_random_item},
     };
     return tools;
 }

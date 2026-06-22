@@ -90,6 +90,19 @@ int main(void) {
         CHECK(b.world_state.current_location == "Unknown");   // default; character-only
     }
 
+    // Attribute allocation spends points and is bounded.
+    {
+        Player pl;
+        pl.attribute_points = 2;
+        CHECK(allocate_attribute(pl, "strength"));
+        CHECK(pl.attributes.strength == 6 && pl.attribute_points == 1);
+        CHECK(!allocate_attribute(pl, "nonsense")); // unknown attribute
+        CHECK(pl.attribute_points == 1);
+        CHECK(allocate_attribute(pl, "luck"));
+        CHECK(pl.attribute_points == 0);
+        CHECK(!allocate_attribute(pl, "strength")); // no points remain
+    }
+
     if (failures == 0) {
         printf("campaign: all checks passed\n");
         return 0;

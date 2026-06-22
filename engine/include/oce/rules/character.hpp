@@ -19,4 +19,8 @@ bool        class_from_string(const std::string& s, CharacterClass& out);
 const char* difficulty_to_string(Difficulty d);
 bool        difficulty_from_string(const std::string& s, Difficulty& out);
 
+// Spends one attribute point to raise the named attribute by one. False if no
+// points remain or the name is not a known attribute.
+bool allocate_attribute(Player& player, const std::string& attribute);
+
 } // namespace oce
