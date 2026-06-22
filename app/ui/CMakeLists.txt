@@ -4,7 +4,8 @@
 # only built when OCE_BUILD_UI is on.
 
 add_library(oce_ui STATIC
-    src/ui_app.cpp)
+    src/ui_app.cpp
+    src/game_panels.cpp)
 
 target_include_directories(oce_ui PUBLIC include)
 target_link_libraries(oce_ui

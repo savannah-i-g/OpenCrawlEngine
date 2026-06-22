@@ -1,7 +1,5 @@
 #include "oce_ui/ui_app.hpp"
 
-#include "oce/version.hpp"
-
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
@@ -63,29 +61,20 @@ UiApp::~UiApp() {
     glfwTerminate();
 }
 
-bool UiApp::should_close() const {
-    return glfwWindowShouldClose(window_) != 0;
-}
-
-bool UiApp::run_frame() {
-    if (should_close()) {
+bool UiApp::begin_frame() {
+    if (glfwWindowShouldClose(window_)) {
         return false;
     }
-
     glfwPollEvents();
 
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
-
     ImGui::DockSpaceOverViewport();
+    return true;
+}
 
-    if (ImGui::Begin("OpenCrawlEngine")) {
-        ImGui::Text("OpenCrawlEngine %s", oce::version_string());
-        ImGui::TextUnformatted("Engine scaffold is running.");
-    }
-    ImGui::End();
-
+void UiApp::end_frame() {
     ImGui::Render();
 
     int fb_w = 0;
@@ -97,7 +86,6 @@ bool UiApp::run_frame() {
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
     glfwSwapBuffers(window_);
-    return true;
 }
 
 } // namespace oce::ui

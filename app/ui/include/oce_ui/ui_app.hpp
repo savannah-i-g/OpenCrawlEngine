@@ -24,9 +24,12 @@ public:
     UiApp(const UiApp&) = delete;
     UiApp& operator=(const UiApp&) = delete;
 
-    // Draws one frame. Returns false once the user has requested close.
-    bool run_frame();
-    bool should_close() const;
+    // Begins a frame: pumps events, starts an ImGui frame, sets up the
+    // dockspace. Returns false once the user has requested close. Issue ImGui
+    // draw calls between begin_frame() and end_frame().
+    bool begin_frame();
+    // Renders and presents the frame.
+    void end_frame();
 
 private:
     UiApp() = default;

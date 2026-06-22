@@ -11,3 +11,12 @@ follows [Semantic Versioning](https://semver.org/).
   warnings, and AddressSanitizer/UBSan in Debug builds.
 - Dear ImGui (docking) desktop frontend that opens an application window.
 - Engine library skeleton with a unit-test harness wired into CTest.
+- Infrastructure libraries (C11): JSON over cJSON, an in-memory secret store
+  with secure zeroization, an HTTP transport with a Server-Sent Events parser,
+  an OpenAI-compatible streaming chat client with tool-call assembly, a
+  single-agent turn loop with a tool registry, and SQLite/in-memory persistence.
+- A headless game engine driven by a language-model game master through tool
+  calls (apply stat changes, set suggested actions), with a background turn
+  worker and local save/load.
+- A game interface: a story log with live streaming narrative, a command input,
+  suggested-action buttons, character status, and in-app API-key entry.
