@@ -30,3 +30,9 @@ original artwork are available at <https://game-icons.net>.
 The frontend loads a serif text font from the host system at runtime when one is
 available, falling back to Dear ImGui's built-in font; no font binaries are
 bundled in this repository.
+
+The AppImage release bundles **DejaVu Serif** so the interface renders
+consistently on systems without a serif font installed. DejaVu fonts are
+distributed under a permissive license derived from the Bitstream Vera license.
+See <https://dejavu-fonts.github.io/License.html>. The font is added only when
+the AppImage is built and is not committed to this repository.

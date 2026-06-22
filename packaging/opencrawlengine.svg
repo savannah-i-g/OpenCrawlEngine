@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- OpenCrawlEngine application icon. Original work, MIT-licensed with the
+     project. A die face on a dark ground, echoing the engine's dice-driven
+     rules. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <rect width="256" height="256" rx="40" fill="#17150F"/>
+  <rect x="24" y="24" width="208" height="208" rx="32" fill="none" stroke="#C9A24B" stroke-width="10"/>
+  <g fill="#C9A24B">
+    <circle cx="80" cy="80" r="16"/>
+    <circle cx="176" cy="80" r="16"/>
+    <circle cx="128" cy="128" r="16"/>
+    <circle cx="80" cy="176" r="16"/>
+    <circle cx="176" cy="176" r="16"/>
+  </g>
+</svg>

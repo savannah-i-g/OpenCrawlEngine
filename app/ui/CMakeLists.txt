@@ -6,7 +6,8 @@
 add_library(oce_ui STATIC
     src/ui_app.cpp
     src/game_panels.cpp
-    src/icon_cache.cpp)
+    src/icon_cache.cpp
+    src/asset_paths.cpp)
 
 target_include_directories(oce_ui PUBLIC include)
 # Absolute path to the committed UI assets (icon SVGs), baked in for dev runs.

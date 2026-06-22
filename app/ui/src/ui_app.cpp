@@ -1,5 +1,6 @@
 #include "oce_ui/ui_app.hpp"
 
+#include "oce_ui/asset_paths.hpp"
 #include "oce_ui/ui_fonts.hpp"
 
 #include "imgui.h"
@@ -10,6 +11,8 @@
 #include <GL/gl.h>
 
 #include <cstdio>
+#include <filesystem>
+#include <string>
 
 namespace oce::ui {
 namespace {
@@ -32,6 +35,18 @@ ImFont* try_load_font(const char* const* paths, size_t count, float size) {
         }
     }
     return nullptr;
+}
+
+// Prefer a font bundled next to the binary (the AppImage case, where the host
+// /usr/share/fonts is not ours), then fall back to the system search paths.
+ImFont* load_face(const std::filesystem::path& bundled, const char* const* system_paths,
+                  size_t count, float size) {
+    const std::string b = bundled.string();
+    const char* one[] = {b.c_str()};
+    if (ImFont* f = try_load_font(one, 1, size); f != nullptr) {
+        return f;
+    }
+    return try_load_font(system_paths, count, size);
 }
 
 } // namespace
@@ -72,23 +87,25 @@ void load_fonts() {
     const size_t nital = sizeof italic / sizeof italic[0];
     const size_t nbi = sizeof bold_italic / sizeof bold_italic[0];
 
-    g_body_font = try_load_font(regular, nreg, 18.0f);
+    const std::filesystem::path fonts = asset_dir() / "fonts";
+
+    g_body_font = load_face(fonts / "DejaVuSerif.ttf", regular, nreg, 18.0f);
     if (g_body_font == nullptr) {
         g_body_font = ImGui::GetIO().Fonts->AddFontDefault();
     }
-    g_bold_font = try_load_font(bold, nbold, 18.0f);
+    g_bold_font = load_face(fonts / "DejaVuSerif-Bold.ttf", bold, nbold, 18.0f);
     if (g_bold_font == nullptr) {
         g_bold_font = g_body_font;
     }
-    g_italic_font = try_load_font(italic, nital, 18.0f);
+    g_italic_font = load_face(fonts / "DejaVuSerif-Italic.ttf", italic, nital, 18.0f);
     if (g_italic_font == nullptr) {
         g_italic_font = g_body_font;
     }
-    g_bolditalic_font = try_load_font(bold_italic, nbi, 18.0f);
+    g_bolditalic_font = load_face(fonts / "DejaVuSerif-BoldItalic.ttf", bold_italic, nbi, 18.0f);
     if (g_bolditalic_font == nullptr) {
         g_bolditalic_font = g_bold_font;
     }
-    g_heading_font = try_load_font(bold, nbold, 26.0f);
+    g_heading_font = load_face(fonts / "DejaVuSerif-Bold.ttf", bold, nbold, 26.0f);
     if (g_heading_font == nullptr) {
         g_heading_font = g_body_font;
     }
@@ -117,6 +134,10 @@ std::unique_ptr<UiApp> UiApp::create(const std::string& title, int width, int he
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+    // Persist the dock layout in the user data dir, not the working directory.
+    // The string is static so the pointer stays valid for ImGui's lifetime.
+    static const std::string ini_path = (user_data_dir() / "imgui.ini").string();
+    io.IniFilename = ini_path.c_str();
     ImGui::StyleColorsDark();
     load_fonts();
 

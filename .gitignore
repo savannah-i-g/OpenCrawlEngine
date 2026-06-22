@@ -11,6 +11,12 @@
 *.so
 *.dylib
 
+# Packaging output (built by scripts/make-appimage.sh and scripts/make-deb.sh)
+/AppDir/
+/.cache/
+*.AppImage
+*.deb
+
 # Local, uncommitted working notes and lists
 /.claude/local/
 

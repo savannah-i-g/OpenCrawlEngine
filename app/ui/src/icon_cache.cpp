@@ -1,5 +1,7 @@
 #include "oce_ui/icon_cache.hpp"
 
+#include "oce_ui/asset_paths.hpp"
+
 #define NANOSVG_IMPLEMENTATION
 #include "nanosvg.h"
 #define NANOSVGRAST_IMPLEMENTATION
@@ -11,10 +13,6 @@
 #include <cstdio>
 #include <filesystem>
 #include <vector>
-
-#ifndef OCE_ASSET_DIR
-#define OCE_ASSET_DIR "."
-#endif
 
 namespace oce::ui {
 
@@ -66,7 +64,7 @@ void IconCache::ensure_loaded() {
     if (rast == nullptr) {
         return;
     }
-    const std::filesystem::path dir = std::filesystem::path(OCE_ASSET_DIR) / "icons";
+    const std::filesystem::path dir = asset_dir() / "icons";
     std::error_code ec;
     if (std::filesystem::is_directory(dir, ec)) {
         for (const auto& entry : std::filesystem::directory_iterator(dir, ec)) {
@@ -77,8 +75,7 @@ void IconCache::ensure_loaded() {
     }
     nsvgDeleteRasterizer(rast);
     std::sort(names_.begin(), names_.end());
-    std::fprintf(stderr, "IconCache: loaded %zu icons from %s\n", textures_.size(),
-                 (std::filesystem::path(OCE_ASSET_DIR) / "icons").c_str());
+    std::fprintf(stderr, "IconCache: loaded %zu icons from %s\n", textures_.size(), dir.c_str());
 }
 
 bool IconCache::has(const std::string& name) const {

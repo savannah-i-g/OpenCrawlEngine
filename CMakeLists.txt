@@ -57,6 +57,33 @@ add_subdirectory(engine)
 
 if(OCE_BUILD_UI)
     add_subdirectory(app)
+
+    # --- Install + packaging (the playable application) -------------------
+    include(GNUInstallDirs)
+    install(TARGETS OpenCrawlEngine RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+    # Icons resolve at runtime as <prefix>/share/opencrawlengine/icons.
+    install(DIRECTORY app/ui/assets/icons
+            DESTINATION ${CMAKE_INSTALL_DATADIR}/opencrawlengine
+            FILES_MATCHING PATTERN "*.svg")
+    install(FILES LICENSE NOTICE.md README.md DESTINATION ${CMAKE_INSTALL_DOCDIR})
+    install(FILES packaging/opencrawlengine.desktop
+            DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
+    install(FILES packaging/opencrawlengine.png
+            DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/256x256/apps)
+
+    # --- Debian package: cpack --config <build>/CPackConfig.cmake -G DEB ---
+    set(CPACK_PACKAGE_NAME "opencrawlengine")
+    set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
+    set(CPACK_PACKAGE_VENDOR "OpenCrawlEngine contributors")
+    set(CPACK_PACKAGE_CONTACT "OpenCrawlEngine contributors")
+    set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "${PROJECT_DESCRIPTION}")
+    set(CPACK_DEBIAN_PACKAGE_SECTION "games")
+    set(CPACK_DEBIAN_PACKAGE_ARCHITECTURE "amd64")
+    set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON) # auto-resolve libc/curl/sqlite/glfw/GL
+    set(CPACK_DEBIAN_PACKAGE_DEPENDS "fonts-dejavu-core")
+    set(CPACK_DEBIAN_FILE_NAME DEB-DEFAULT)
+    set(CPACK_GENERATOR "DEB")
+    include(CPack)
 endif()
 
 message(STATUS "OpenCrawlEngine ${PROJECT_VERSION} | UI=${OCE_BUILD_UI} Tests=${OCE_BUILD_TESTS} Build=${CMAKE_BUILD_TYPE}")
