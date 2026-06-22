@@ -69,7 +69,7 @@ static void secure_zero(void* p, size_t n) {
 // ---------------------------------------------------------------------------
 
 char* oce_llm_build_request_json(const char* model, const oce_llm_message* msgs, size_t n,
-                                 const char* tools_json, bool stream) {
+                                 const char* tools_json, const char* forced_tool, bool stream) {
     if (model == NULL || (msgs == NULL && n > 0)) {
         return NULL;
     }
@@ -112,7 +112,16 @@ char* oce_llm_build_request_json(const char* model, const oce_llm_message* msgs,
         oce_json* tools = oce_json_parse(tools_json, strlen(tools_json));
         if (tools != NULL) {
             oce_json_obj_set(root, "tools", tools);
-            oce_json_obj_set_str(root, "tool_choice", "auto");
+            if (forced_tool != NULL && forced_tool[0] != '\0') {
+                oce_json* tc = oce_json_new_object();
+                oce_json_obj_set_str(tc, "type", "function");
+                oce_json* fn = oce_json_new_object();
+                oce_json_obj_set_str(fn, "name", forced_tool);
+                oce_json_obj_set(tc, "function", fn);
+                oce_json_obj_set(root, "tool_choice", tc);
+            } else {
+                oce_json_obj_set_str(root, "tool_choice", "auto");
+            }
         }
     }
 
@@ -291,9 +300,18 @@ struct oce_llm {
     char** extra_headers;
     size_t extra_header_count;
     oce_http* http; // borrowed
+    char* forced_tool;
     oce_llm_usage last_usage;
     oce_llm_usage total_usage;
 };
+
+void oce_llm_set_forced_tool(oce_llm* llm, const char* tool_name) {
+    if (llm == NULL) {
+        return;
+    }
+    free(llm->forced_tool);
+    llm->forced_tool = (tool_name != NULL && tool_name[0] != '\0') ? dup_str(tool_name) : NULL;
+}
 
 oce_llm* oce_llm_new(const oce_llm_config* cfg, oce_http* http) {
     if (cfg == NULL || cfg->base_url == NULL || cfg->model == NULL || http == NULL) {
@@ -335,6 +353,7 @@ void oce_llm_free(oce_llm* llm) {
     }
     free(llm->base_url);
     free(llm->model);
+    free(llm->forced_tool);
     if (llm->api_key != NULL) {
         secure_zero(llm->api_key, strlen(llm->api_key));
         free(llm->api_key);
@@ -359,7 +378,7 @@ oce_llm_status oce_llm_chat_stream(oce_llm* llm, const oce_llm_message* msgs, si
         return OCE_LLM_ERR_INVALID;
     }
 
-    char* body = oce_llm_build_request_json(llm->model, msgs, n, tools_json, true);
+    char* body = oce_llm_build_request_json(llm->model, msgs, n, tools_json, llm->forced_tool, true);
     if (body == NULL) {
         return OCE_LLM_ERR_PARSE;
     }

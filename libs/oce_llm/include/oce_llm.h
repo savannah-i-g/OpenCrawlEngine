@@ -55,13 +55,18 @@ typedef struct {
 } oce_llm_usage;
 
 // Build the chat-completions request body. Pure and offline-testable.
-// Returns a malloc'd string the caller frees; NULL on error.
+// forced_tool: NULL/empty selects tool_choice "auto"; otherwise the named tool
+// is forced. Returns a malloc'd string the caller frees; NULL on error.
 char* oce_llm_build_request_json(const char* model, const oce_llm_message* msgs, size_t n,
-                                 const char* tools_json, bool stream);
+                                 const char* tools_json, const char* forced_tool, bool stream);
 
 typedef struct oce_llm oce_llm;
 oce_llm* oce_llm_new(const oce_llm_config* cfg, oce_http* http); // borrows http
 void     oce_llm_free(oce_llm* llm);
+
+// Forces the model to call the named tool on subsequent requests (NULL clears
+// it). The name is copied. Intended for one-shot structured calls.
+void oce_llm_set_forced_tool(oce_llm* llm, const char* tool_name);
 
 // Stream a chat completion. Text deltas arrive via handlers->on_text; whole
 // tool calls are delivered via handlers->on_tool_call after assembly. The

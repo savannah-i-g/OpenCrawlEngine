@@ -21,6 +21,7 @@ typedef struct {
     oce_store_status (*kv_list)(void* impl, store_table t, const char* parent, char*** ids_out,
                                 size_t* n_out);
     oce_store_status (*kv_delete)(void* impl, store_table t, const char* id);
+    oce_store_status (*kv_parent)(void* impl, store_table t, const char* id, char** parent_out);
     oce_store_status (*msg_append)(void* impl, const char* campaign_id, const char* role,
                                    const char* sender, const char* content, long long ts);
     oce_store_status (*msg_list)(void* impl, const char* campaign_id, oce_store_msg** out,
@@ -187,6 +188,29 @@ static oce_store_status sq_kv_delete(void* impl, store_table t, const char* id) 
     return rc == SQLITE_DONE ? OCE_STORE_OK : OCE_STORE_ERR_IO;
 }
 
+static oce_store_status sq_kv_parent(void* impl, store_table t, const char* id, char** out) {
+    if (t != TBL_CAMPAIGNS) {
+        return OCE_STORE_ERR_NOT_FOUND;
+    }
+    sqlite3* db = ((sqlite_impl*) impl)->db;
+    sqlite3_stmt* st = NULL;
+    if (sqlite3_prepare_v2(db, "SELECT character_id FROM campaigns WHERE id=?1", -1, &st, NULL) !=
+        SQLITE_OK) {
+        return OCE_STORE_ERR_IO;
+    }
+    sqlite3_bind_text(st, 1, id, -1, SQLITE_TRANSIENT);
+    int rc = sqlite3_step(st);
+    oce_store_status status;
+    if (rc == SQLITE_ROW) {
+        *out = dup_str((const char*) sqlite3_column_text(st, 0));
+        status = *out ? OCE_STORE_OK : OCE_STORE_ERR_NOMEM;
+    } else {
+        status = (rc == SQLITE_DONE) ? OCE_STORE_ERR_NOT_FOUND : OCE_STORE_ERR_IO;
+    }
+    sqlite3_finalize(st);
+    return status;
+}
+
 static oce_store_status sq_msg_append(void* impl, const char* campaign_id, const char* role,
                                       const char* sender, const char* content, long long ts) {
     sqlite3* db = ((sqlite_impl*) impl)->db;
@@ -258,6 +282,7 @@ static const store_ops k_sqlite_ops = {
     .kv_load = sq_kv_load,
     .kv_list = sq_kv_list,
     .kv_delete = sq_kv_delete,
+    .kv_parent = sq_kv_parent,
     .msg_append = sq_msg_append,
     .msg_list = sq_msg_list,
 };
@@ -486,6 +511,20 @@ static oce_store_status mem_kv_delete(void* impl, store_table t, const char* id)
     return OCE_STORE_OK; // idempotent
 }
 
+static oce_store_status mem_kv_parent(void* impl, store_table t, const char* id, char** out) {
+    if (t != TBL_CAMPAIGNS) {
+        return OCE_STORE_ERR_NOT_FOUND;
+    }
+    mem_impl* m = (mem_impl*) impl;
+    for (size_t i = 0; i < m->ncamps; ++i) {
+        if (strcmp(m->camps[i].id, id) == 0) {
+            *out = dup_str(m->camps[i].parent ? m->camps[i].parent : "");
+            return *out ? OCE_STORE_OK : OCE_STORE_ERR_NOMEM;
+        }
+    }
+    return OCE_STORE_ERR_NOT_FOUND;
+}
+
 static oce_store_status mem_msg_append(void* impl, const char* campaign_id, const char* role,
                                        const char* sender, const char* content, long long ts) {
     mem_impl* m = (mem_impl*) impl;
@@ -545,6 +584,7 @@ static const store_ops k_memory_ops = {
     .kv_load = mem_kv_load,
     .kv_list = mem_kv_list,
     .kv_delete = mem_kv_delete,
+    .kv_parent = mem_kv_parent,
     .msg_append = mem_msg_append,
     .msg_list = mem_msg_list,
 };
@@ -645,6 +685,13 @@ oce_store_status oce_store_campaign_delete(oce_store* s, const char* id) {
         return OCE_STORE_ERR_INVALID;
     }
     return s->ops->kv_delete(s->impl, TBL_CAMPAIGNS, id);
+}
+
+oce_store_status oce_store_campaign_character(oce_store* s, const char* campaign_id, char** out) {
+    if (s == NULL || campaign_id == NULL || out == NULL) {
+        return OCE_STORE_ERR_INVALID;
+    }
+    return s->ops->kv_parent(s->impl, TBL_CAMPAIGNS, campaign_id, out);
 }
 
 oce_store_status oce_store_msg_append(oce_store* s, const char* campaign_id, const char* role,

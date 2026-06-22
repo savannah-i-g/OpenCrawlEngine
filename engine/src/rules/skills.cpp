@@ -50,4 +50,32 @@ int attribute_value(const Attributes& a, const std::string& name) {
     return 10;
 }
 
+int difficulty_dc_offset(Difficulty difficulty) {
+    switch (difficulty) {
+        case Difficulty::Easy:
+            return -2;
+        case Difficulty::Normal:
+            return 0;
+        case Difficulty::Hard:
+            return 2;
+        case Difficulty::Deadly:
+            return 4;
+    }
+    return 0;
+}
+
+int difficulty_level_offset(Difficulty difficulty) {
+    switch (difficulty) {
+        case Difficulty::Easy:
+            return -1;
+        case Difficulty::Normal:
+            return 0;
+        case Difficulty::Hard:
+            return 1;
+        case Difficulty::Deadly:
+            return 2;
+    }
+    return 0;
+}
+
 } // namespace oce

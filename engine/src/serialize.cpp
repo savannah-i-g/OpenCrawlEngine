@@ -442,9 +442,40 @@ oce_json* vec_to_json(const std::vector<T>& v, ToJson to_json) {
 
 } // namespace
 
-std::string serialize_game_state(const GameState& s) {
-    oce_json* root = oce_json_new_object();
-    oce_json_obj_set_int(root, "version", 1);
+namespace {
+
+oce_json* meta_to_json(const CampaignMeta& m) {
+    oce_json* o = oce_json_new_object();
+    oce_json_obj_set_str(o, "name", m.name.c_str());
+    oce_json_obj_set_str(o, "theme", m.theme.c_str());
+    oce_json_obj_set_str(o, "tone", m.tone.c_str());
+    oce_json_obj_set(o, "goals", str_array(m.goals));
+    oce_json_obj_set_str(o, "difficulty", difficulty_to_string(m.difficulty));
+    oce_json_obj_set_str(o, "custom_prompt", m.custom_prompt.c_str());
+    oce_json_obj_set(o, "tags", str_array(m.tags));
+    oce_json_obj_set_str(o, "notes", m.notes.c_str());
+    return o;
+}
+
+void meta_from_json(const oce_json* o, CampaignMeta& m) {
+    if (!oce_json_is_object(o)) {
+        return;
+    }
+    m.name = oce_json_get_str(o, "name", "Adventure");
+    m.theme = oce_json_get_str(o, "theme", "");
+    m.tone = oce_json_get_str(o, "tone", "");
+    str_array_from(o, "goals", m.goals);
+    Difficulty d;
+    if (difficulty_from_string(oce_json_get_str(o, "difficulty", "normal"), d)) {
+        m.difficulty = d;
+    }
+    m.custom_prompt = oce_json_get_str(o, "custom_prompt", "");
+    str_array_from(o, "tags", m.tags);
+    m.notes = oce_json_get_str(o, "notes", "");
+}
+
+// The persistent-character half of a save.
+void write_character_fields(oce_json* root, const GameState& s) {
     oce_json_obj_set(root, "player", player_to_json(s.player));
     oce_json_obj_set(root, "inventory", vec_to_json(s.inventory, item_to_json));
 
@@ -463,16 +494,6 @@ std::string serialize_game_state(const GameState& s) {
     oce_json_obj_set(assets, "properties", vec_to_json(s.assets.properties, property_to_json));
     oce_json_obj_set(assets, "mounts", vec_to_json(s.assets.mounts, mount_to_json));
     oce_json_obj_set(root, "assets", assets);
-
-    oce_json* story = oce_json_new_array();
-    for (const Message& m : s.story) {
-        oce_json* mo = oce_json_new_object();
-        oce_json_obj_set_str(mo, "sender", m.sender.c_str());
-        oce_json_obj_set_str(mo, "content", m.content.c_str());
-        oce_json_obj_set_int(mo, "ts", m.ts);
-        oce_json_arr_append(story, mo);
-    }
-    oce_json_obj_set(root, "story", story);
 
     oce_json_obj_set_str(root, "world_description", s.world_description.c_str());
     oce_json_obj_set_str(root, "world_context", s.world_context.c_str());
@@ -493,6 +514,19 @@ std::string serialize_game_state(const GameState& s) {
     }
     oce_json_obj_set(world, "factions", factions);
     oce_json_obj_set(root, "world_state", world);
+}
+
+// The per-adventure campaign half of a save.
+void write_campaign_fields(oce_json* root, const GameState& s) {
+    oce_json* story = oce_json_new_array();
+    for (const Message& m : s.story) {
+        oce_json* mo = oce_json_new_object();
+        oce_json_obj_set_str(mo, "sender", m.sender.c_str());
+        oce_json_obj_set_str(mo, "content", m.content.c_str());
+        oce_json_obj_set_int(mo, "ts", m.ts);
+        oce_json_arr_append(story, mo);
+    }
+    oce_json_obj_set(root, "story", story);
 
     oce_json* combat = oce_json_new_object();
     oce_json_obj_set_bool(combat, "active", s.combat.active);
@@ -512,23 +546,10 @@ std::string serialize_game_state(const GameState& s) {
     oce_json_obj_set(root, "skill_check", sc);
 
     oce_json_obj_set(root, "suggested_actions", str_array(s.suggested_actions));
-
-    char* text = oce_json_print(root, false);
-    std::string out = text ? text : "{}";
-    free(text);
-    oce_json_free(root);
-    return out;
+    oce_json_obj_set(root, "meta", meta_to_json(s.meta));
 }
 
-void deserialize_game_state(const char* json, GameState& out) {
-    if (json == nullptr) {
-        return;
-    }
-    oce_json* root = oce_json_parse(json, std::strlen(json));
-    if (root == nullptr) {
-        return;
-    }
-
+void read_character_fields(const oce_json* root, GameState& out) {
     player_from_json(oce_json_get(root, "player"), out.player);
 
     const oce_json* inv = oce_json_get(root, "inventory");
@@ -584,20 +605,6 @@ void deserialize_game_state(const char* json, GameState& out) {
         }
     }
 
-    const oce_json* story = oce_json_get(root, "story");
-    if (oce_json_is_array(story)) {
-        out.story.clear();
-        const size_t n = oce_json_arr_len(story);
-        for (size_t i = 0; i < n; ++i) {
-            const oce_json* m = oce_json_arr_at(story, i);
-            Message msg;
-            msg.sender = oce_json_get_str(m, "sender", "narrator");
-            msg.content = oce_json_get_str(m, "content", "");
-            msg.ts = oce_json_get_int(m, "ts", 0);
-            out.story.push_back(std::move(msg));
-        }
-    }
-
     out.world_description = oce_json_get_str(root, "world_description", "");
     out.world_context = oce_json_get_str(root, "world_context", "");
 
@@ -622,6 +629,22 @@ void deserialize_game_state(const char* json, GameState& out) {
                 Faction f = faction_from_json(oce_json_arr_at(factions, i));
                 out.world_state.factions[f.id] = f;
             }
+        }
+    }
+}
+
+void read_campaign_fields(const oce_json* root, GameState& out) {
+    const oce_json* story = oce_json_get(root, "story");
+    if (oce_json_is_array(story)) {
+        out.story.clear();
+        const size_t n = oce_json_arr_len(story);
+        for (size_t i = 0; i < n; ++i) {
+            const oce_json* m = oce_json_arr_at(story, i);
+            Message msg;
+            msg.sender = oce_json_get_str(m, "sender", "narrator");
+            msg.content = oce_json_get_str(m, "content", "");
+            msg.ts = oce_json_get_int(m, "ts", 0);
+            out.story.push_back(std::move(msg));
         }
     }
 
@@ -651,7 +674,75 @@ void deserialize_game_state(const char* json, GameState& out) {
     }
 
     str_array_from(root, "suggested_actions", out.suggested_actions);
+    meta_from_json(oce_json_get(root, "meta"), out.meta);
+}
 
+std::string print_and_free(oce_json* root) {
+    char* text = oce_json_print(root, false);
+    std::string out = text ? text : "{}";
+    free(text);
+    oce_json_free(root);
+    return out;
+}
+
+} // namespace
+
+std::string serialize_character(const GameState& s) {
+    oce_json* root = oce_json_new_object();
+    oce_json_obj_set_int(root, "version", 1);
+    write_character_fields(root, s);
+    return print_and_free(root);
+}
+
+std::string serialize_campaign(const GameState& s) {
+    oce_json* root = oce_json_new_object();
+    oce_json_obj_set_int(root, "version", 1);
+    write_campaign_fields(root, s);
+    return print_and_free(root);
+}
+
+std::string serialize_game_state(const GameState& s) {
+    oce_json* root = oce_json_new_object();
+    oce_json_obj_set_int(root, "version", 1);
+    write_character_fields(root, s);
+    write_campaign_fields(root, s);
+    return print_and_free(root);
+}
+
+void deserialize_character(const char* json, GameState& out) {
+    if (json == nullptr) {
+        return;
+    }
+    oce_json* root = oce_json_parse(json, std::strlen(json));
+    if (root == nullptr) {
+        return;
+    }
+    read_character_fields(root, out);
+    oce_json_free(root);
+}
+
+void deserialize_campaign(const char* json, GameState& out) {
+    if (json == nullptr) {
+        return;
+    }
+    oce_json* root = oce_json_parse(json, std::strlen(json));
+    if (root == nullptr) {
+        return;
+    }
+    read_campaign_fields(root, out);
+    oce_json_free(root);
+}
+
+void deserialize_game_state(const char* json, GameState& out) {
+    if (json == nullptr) {
+        return;
+    }
+    oce_json* root = oce_json_parse(json, std::strlen(json));
+    if (root == nullptr) {
+        return;
+    }
+    read_character_fields(root, out);
+    read_campaign_fields(root, out);
     oce_json_free(root);
 }
 

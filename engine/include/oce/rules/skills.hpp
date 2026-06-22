@@ -32,4 +32,8 @@ int spell_difficulty(int level);
 // Looks up a named attribute's value (10 if the name is unknown).
 int attribute_value(const Attributes& attributes, const std::string& name);
 
+// Difficulty offsets: applied to skill-check DCs and to spawned enemy levels.
+int difficulty_dc_offset(Difficulty difficulty);    // easy -2, normal 0, hard +2, deadly +4
+int difficulty_level_offset(Difficulty difficulty); // easy -1, normal 0, hard +1, deadly +2
+
 } // namespace oce

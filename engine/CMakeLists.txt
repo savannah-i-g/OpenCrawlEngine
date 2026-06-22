@@ -52,4 +52,12 @@ if(OCE_BUILD_TESTS)
     add_executable(test_serialize tests/test_serialize.cpp)
     target_link_libraries(test_serialize PRIVATE oce_engine oce_warnings)
     add_test(NAME serialize COMMAND test_serialize)
+
+    add_executable(test_campaign tests/test_campaign.cpp)
+    target_link_libraries(test_campaign PRIVATE oce_engine oce_warnings)
+    add_test(NAME campaign COMMAND test_campaign)
+
+    add_executable(test_worldgen tests/test_worldgen.cpp)
+    target_link_libraries(test_worldgen PRIVATE oce_engine oce_warnings)
+    add_test(NAME worldgen COMMAND test_worldgen)
 endif()

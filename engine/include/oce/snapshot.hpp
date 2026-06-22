@@ -18,12 +18,17 @@ struct Snapshot {
     CombatState combat;
     SkillCheck skill_check;
     WorldState world_state;
+    CampaignMeta meta;          // the active campaign's framing
     std::string streaming_text; // narrative arriving during the current turn
     bool turn_in_progress = false;
     std::string status;         // a status or error line for the UI
     long long total_tokens = 0;
     std::string model;
     std::string base_url;
+    // Latest world-parameter autofill suggestion; seq increments per result so
+    // the UI can detect and apply a new suggestion.
+    std::string autofill_value;
+    long long autofill_seq = 0;
 };
 
 } // namespace oce

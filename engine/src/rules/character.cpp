@@ -100,4 +100,33 @@ bool class_from_string(const std::string& s, CharacterClass& out) {
     return true;
 }
 
+const char* difficulty_to_string(Difficulty d) {
+    switch (d) {
+        case Difficulty::Easy:
+            return "easy";
+        case Difficulty::Normal:
+            return "normal";
+        case Difficulty::Hard:
+            return "hard";
+        case Difficulty::Deadly:
+            return "deadly";
+    }
+    return "normal";
+}
+
+bool difficulty_from_string(const std::string& s, Difficulty& out) {
+    if (s == "easy") {
+        out = Difficulty::Easy;
+    } else if (s == "normal") {
+        out = Difficulty::Normal;
+    } else if (s == "hard") {
+        out = Difficulty::Hard;
+    } else if (s == "deadly") {
+        out = Difficulty::Deadly;
+    } else {
+        return false;
+    }
+    return true;
+}
+
 } // namespace oce

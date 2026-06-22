@@ -225,6 +225,22 @@ struct CombatOutcome {
     int gold_gained = 0;
 };
 
+enum class Difficulty { Easy, Normal, Hard, Deadly };
+
+// Per-campaign metadata (the campaign half of a save; the rest of GameState
+// above the line — player/inventory/equipment/assets/world — is the persistent
+// character half).
+struct CampaignMeta {
+    std::string name = "Adventure";
+    std::string theme;
+    std::string tone;
+    std::vector<std::string> goals;
+    Difficulty difficulty = Difficulty::Normal;
+    std::string custom_prompt; // extra game-master directive
+    std::vector<std::string> tags;
+    std::string notes;
+};
+
 struct GameState {
     Player player;
     std::vector<Item> inventory;
@@ -237,6 +253,7 @@ struct GameState {
     CombatState combat;
     SkillCheck skill_check;
     std::vector<std::string> suggested_actions;
+    CampaignMeta meta;
 };
 
 } // namespace oce
