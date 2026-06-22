@@ -113,7 +113,7 @@ int main(void) {
         CHECK(gs.player.name == "Lyra");
         CHECK(gs.player.cls == oce::CharacterClass::Mage);
         CHECK(gs.player.attributes.intelligence == 8); // the mage starting spread
-        CHECK(gs.inventory.size() == 5u);              // starting kit
+        CHECK(gs.inventory.empty());                   // no hardcoded kit; world-gen grants gear
         CHECK(gs.world_description == "a rain-soaked port city");
         CHECK(!gs.story.empty());
     }
@@ -200,24 +200,43 @@ int main(void) {
         oce::NewGameParams p;
         p.name = "Geared";
         engine.new_game(p);
-        const size_t kit = engine.state_copy().inventory.size();
+        CHECK(engine.state_copy().inventory.empty()); // no hardcoded starting kit
         const int str0 = engine.state_copy().player.attributes.strength;
 
-        engine.player_equip("starter-sword");
+        // Grant a weapon and a potion directly, then exercise the player actions.
+        engine.apply_gm_tool(
+            "add_item",
+            "{\"name\":\"Test Blade\",\"type\":\"weapon\",\"rarity\":\"common\",\"power\":3}");
+        engine.apply_gm_tool(
+            "add_item",
+            "{\"name\":\"Test Tonic\",\"type\":\"potion\",\"rarity\":\"common\",\"power\":10}");
+        std::string weapon_id;
+        std::string potion_id;
+        for (const oce::Item& it : engine.state_copy().inventory) {
+            if (it.kind == oce::ItemKind::Weapon) {
+                weapon_id = it.id;
+            } else if (it.kind == oce::ItemKind::Potion) {
+                potion_id = it.id;
+            }
+        }
+        CHECK(!weapon_id.empty() && !potion_id.empty());
+        const size_t inv = engine.state_copy().inventory.size();
+
+        engine.player_equip(weapon_id);
         {
             oce::GameState gs = engine.state_copy();
             CHECK(gs.equipment.hand.has_value());
-            CHECK(gs.equipment.hand.has_value() && gs.equipment.hand->id == "starter-sword");
-            CHECK(gs.inventory.size() == kit - 1u);
+            CHECK(gs.equipment.hand.has_value() && gs.equipment.hand->id == weapon_id);
+            CHECK(gs.inventory.size() == inv - 1u);
         }
         engine.player_unequip("hand");
         {
             oce::GameState gs = engine.state_copy();
             CHECK(!gs.equipment.hand.has_value());
-            CHECK(gs.inventory.size() == kit); // the sword returned to the pack
+            CHECK(gs.inventory.size() == inv); // the weapon returned to the pack
         }
-        engine.player_consume("starter-health-potion-1");
-        CHECK(engine.state_copy().inventory.size() == kit - 1u);
+        engine.player_consume(potion_id);
+        CHECK(engine.state_copy().inventory.size() == inv - 1u);
         // No attribute points at level 1: allocation is a no-op.
         engine.allocate_attribute("strength");
         CHECK(engine.state_copy().player.attributes.strength == str0);

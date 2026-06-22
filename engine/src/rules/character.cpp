@@ -46,23 +46,6 @@ Player make_character(const std::string& name, CharacterClass cls, const std::st
     return p;
 }
 
-std::vector<Item> starting_kit() {
-    std::vector<Item> kit;
-    kit.push_back(generate_item("starter-sword", "Rusty Sword", "A bladed weapon.", ItemKind::Weapon,
-                                ItemSlot::Hand, ItemRarity::Common, 2, false));
-    kit.push_back(generate_item("starter-armor", "Worn Leather Armor", "Light armor.",
-                                ItemKind::Armor, ItemSlot::Body, ItemRarity::Common, 1, false));
-    kit.push_back(generate_item("starter-health-potion-1", "Minor Health Potion",
-                                "Restores health.", ItemKind::Potion, ItemSlot::Consumable,
-                                ItemRarity::Common, 20, false));
-    kit.push_back(generate_item("starter-health-potion-2", "Minor Health Potion",
-                                "Restores health.", ItemKind::Potion, ItemSlot::Consumable,
-                                ItemRarity::Common, 20, false));
-    kit.push_back(generate_item("starter-bread", "Stale Bread", "A loaf of bread.", ItemKind::Potion,
-                                ItemSlot::Consumable, ItemRarity::Common, 5, false));
-    return kit;
-}
-
 const char* class_to_string(CharacterClass cls) {
     switch (cls) {
         case CharacterClass::Warrior:

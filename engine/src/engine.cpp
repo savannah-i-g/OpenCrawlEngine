@@ -255,7 +255,7 @@ void Engine::new_game(const NewGameParams& params) {
         }
         state_ = GameState{};
         state_.player = make_character(params.name, params.cls, params.background);
-        state_.inventory = starting_kit();
+        // Inventory starts empty; world generation grants setting-appropriate gear.
         state_.world_description = params.world_prompt;
         state_.world_state.current_location = "Starting Location";
         std::string opening = "A new adventure begins";
@@ -839,11 +839,12 @@ std::string Engine::system_prompt() const {
            "holdings and adjust standing.\n"
            "- set_world / upsert_npc / set_location / add_world_fact: establish and keep the world "
            "consistent.\n"
-           "ALWAYS end every turn by calling set_suggested_actions with two to four short, "
-           "imperative next actions (e.g. \"Search the room\", \"Talk to the guard\"). They render "
-           "as clickable buttons in the interface, so NEVER write suggested actions, numbered "
-           "option lists, or a \"what do you do?\" menu in your prose — offer them only through the "
-           "tool.\n\n"
+           "ALWAYS end every turn by calling the set_suggested_actions tool with two to four "
+           "short, imperative next actions (e.g. \"Search the room\", \"Talk to the guard\"); they "
+           "appear to the player as clickable buttons. Your narration is pure in-world "
+           "second-person prose: NEVER write a list of options or a \"what do you do?\" menu, and "
+           "NEVER mention tools, function or tool names (such as set_suggested_actions), or emit "
+           "JSON in the narration.\n\n"
            "The engine owns all randomness: never invent dice results or decide whether an attack "
            "or skill check succeeds — call the tool and react to its result. Do not state the "
            "player's numeric stats in the prose; the interface shows them.";
@@ -1127,9 +1128,11 @@ void Engine::run_worldgen(const WorldParams& params) {
     }
     brief += "\nCall set_world with a vivid world_description, a starting_location, and an opening "
              "storyline_hook. Record two or three durable details with add_world_fact. Introduce a "
-             "key faction via change_faction and a notable NPC via upsert_npc. Grant a few fitting "
-             "starting items with add_item. Then narrate the opening scene in vivid second person "
-             "and finish by calling set_suggested_actions with two to four next actions.";
+             "key faction via change_faction and a notable NPC via upsert_npc. Grant three or four "
+             "starting items appropriate to the world's technology and setting via add_item — never "
+             "default to generic medieval-fantasy gear unless the setting calls for it. Then "
+             "narrate the opening scene in vivid second person and finish by calling "
+             "set_suggested_actions with two to four next actions.";
 
     oce_agent_observer obs = {oce_engine_thunk_on_text, nullptr, this};
     oce_agent_status st = oce_agent_run(agent_, brief.c_str(), &obs, &cancel_);
